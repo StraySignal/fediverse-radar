@@ -22,15 +22,12 @@ function excludeDomain(address) {
 async function checkAccountExists(accountAddress) {
   const formattedAddress = accountAddress.replace('@', ''); // Remove the @ sign
   const profileUrl = `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${formattedAddress}`;
-  console.log(`Checking: ${profileUrl}`);
   try {
     const response = await axios.get(profileUrl);
     // If the response status is 200, the account exists
     const accountExists = response.status === 200;
-    console.log(`Account ${formattedAddress} exists: ${accountExists}`);
     return { exists: accountExists, address: formattedAddress };
   } catch (error) {
-    console.log(`Error checking account ${formattedAddress}: ${error.message}`);
     return { exists: false, address: formattedAddress, error: error.message };
   }
 }
@@ -42,30 +39,35 @@ const outputFilename = 'output.csv';
 const results = [];
 const requestQueue = [];
 let requestsInProgress = 0;
+let csvReadFinished = false;
 
-// Read the input CSV
 fs.createReadStream(inputFilename)
   .pipe(csv())
-  .on('data', async (row) => {
+  .on('data', (row) => {
     const newAddress = convertAddressFormat(row['Account address']);
     const profileUrl = `https://bsky.app/profile/${newAddress.replace('@', '')}`;
     if (!excludeDomain(row['Account address'])) {
-      if (checkFlag) {
-        // If -c flag is provided, enqueue the account existence check
-        requestQueue.push(async () => {
-          const result = await checkAccountExists(newAddress);
-          if (result.exists) {
-            results.push({ 'Account address': result.address, 'Profile URL': profileUrl });
+      requestQueue.push(async () => {
+        const result = await checkAccountExists(newAddress);
+        if (result.exists) {
+          // Now check the profile URL directly
+          try {
+            const profileResponse = await axios.get(profileUrl, { validateStatus: null });
+            if (profileResponse.status === 200) {
+              results.push({ 'Account address': result.address, 'Profile URL': profileUrl });
+              console.log(`Success: ${result.address} -> ${profileUrl}`);
+            }
+          } catch (err) {
+            // do not log errors for unsuccessful profile fetches
           }
-        });
-      } else {
-        // If -c flag is not provided, just print the profile URL
-        results.push({ 'Account address': newAddress, 'Profile URL': profileUrl });
-      }
+        }
+      });
     }
   })
-  .on('end', () => {
-    processRequestQueue();
+  .on('end', async () => {
+    csvReadFinished = true;
+    await processRequestQueue();
+    writeResultsToFile();
   })
   .on('error', (error) => {
     console.error(`Error reading CSV: ${error.message}`);
@@ -83,7 +85,6 @@ async function processRequestQueue() {
       await sleep(100); // Delay 100 milliseconds if the maximum requests limit is reached
     }
   }
-  writeResultsToFile();
 }
 
 function writeResultsToFile() {
