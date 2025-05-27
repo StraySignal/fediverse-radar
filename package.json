@@ -19,7 +19,7 @@
     "csv-writer": "^1.6.0",
     "fast-csv": "^4.3.6",
     "p-queue": "^8.0.1",
-    "parse": "^3.5.1",
+    "parse": "^6.1.1",
     "readline-sync": "^1.4.10"
   }
 }
