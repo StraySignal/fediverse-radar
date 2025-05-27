@@ -11,7 +11,7 @@
   "dependencies": {
     "async": "^3.2.5",
     "async-await-queue": "^2.1.4",
-    "axios": "^0.27.2",
+    "axios": "^0.30.0",
     "cheerio": "^1.0.0-rc.12",
     "create-html": "^4.1.0",
     "csv-parse": "^5.6.0",
@@ -19,7 +19,7 @@
     "csv-writer": "^1.6.0",
     "fast-csv": "^4.3.6",
     "p-queue": "^8.0.1",
-    "parse": "^3.5.1",
+    "parse": "^6.1.1",
     "readline-sync": "^1.4.10"
   }
 }
