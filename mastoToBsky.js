@@ -32,72 +32,86 @@ async function checkAccountExists(accountAddress) {
   }
 }
 
-// Check if the filename and optional -c flag are provided as command-line arguments
-const inputFilename = process.argv[2];
-const checkFlag = process.argv.includes('-c');
-const outputFilename = 'output.csv';
-const results = [];
-const requestQueue = [];
-let requestsInProgress = 0;
-let csvReadFinished = false;
+async function main(args = process.argv.slice(2)) {
+  const inputFilename = args[0];
+  const checkFlag = args.includes('-c');
+  const outputFilename = 'output.csv';
+  const results = [];
+  const requestQueue = [];
+  let requestsInProgress = 0;
 
-fs.createReadStream(inputFilename)
-  .pipe(csv())
-  .on('data', (row) => {
-    const newAddress = convertAddressFormat(row['Account address']);
-    const profileUrl = `https://bsky.app/profile/${newAddress.replace('@', '')}`;
-    if (!excludeDomain(row['Account address'])) {
-      requestQueue.push(async () => {
-        const result = await checkAccountExists(newAddress);
-        if (result.exists) {
-          // Now check the profile URL directly
-          try {
-            const profileResponse = await axios.get(profileUrl, { validateStatus: null });
-            if (profileResponse.status === 200) {
-              results.push({ 'Account address': result.address, 'Profile URL': profileUrl });
-              console.log(`Success: ${result.address} -> ${profileUrl}`);
+  await new Promise((resolve, reject) => {
+    fs.createReadStream(inputFilename)
+      .pipe(csv())
+      .on('data', (row) => {
+        const newAddress = convertAddressFormat(row['Account address']);
+        const profileUrl = `https://bsky.app/profile/${newAddress.replace('@', '')}`;
+        if (!excludeDomain(row['Account address'])) {
+          requestQueue.push(async () => {
+            const result = await checkAccountExists(newAddress);
+            if (result.exists) {
+              // Now check the profile URL directly
+              try {
+                const profileResponse = await axios.get(profileUrl, { validateStatus: null });
+                if (profileResponse.status === 200) {
+                  results.push({ 'Account address': result.address, 'Profile URL': profileUrl });
+                  console.log(`Success: ${result.address} -> ${profileUrl}`);
+                }
+              } catch (err) {
+                // do not log errors for unsuccessful profile fetches
+              }
             }
-          } catch (err) {
-            // do not log errors for unsuccessful profile fetches
-          }
+          });
         }
+      })
+      .on('end', async () => {
+        console.log('CSV read complete, processing queue...');
+        await processRequestQueue();
+        await writeResultsToFile();
+        resolve();
+      })
+      .on('error', async (error) => {
+        console.error(`Error reading CSV: ${error.message}`);
+        await writeResultsToFile();
+        resolve();
       });
-    }
-  })
-  .on('end', async () => {
-    csvReadFinished = true;
-    await processRequestQueue();
-    writeResultsToFile();
-  })
-  .on('error', (error) => {
-    console.error(`Error reading CSV: ${error.message}`);
-    writeResultsToFile();
   });
 
-async function processRequestQueue() {
-  while (requestQueue.length > 0) {
-    if (requestsInProgress < 10) {
-      const request = requestQueue.shift();
-      requestsInProgress++;
-      await request();
-      requestsInProgress--;
-    } else {
-      await sleep(100); // Delay 100 milliseconds if the maximum requests limit is reached
+  async function processRequestQueue() {
+    while (requestQueue.length > 0) {
+      if (requestsInProgress < 10) {
+        const request = requestQueue.shift();
+        requestsInProgress++;
+        await request();
+        requestsInProgress--;
+      } else {
+        await sleep(100); // Delay 100 milliseconds if the maximum requests limit is reached
+      }
     }
+  }
+
+  function writeResultsToFile() {
+    return new Promise((resolve, reject) => {
+      console.log(`Writing ${results.length} results to ${outputFilename}...`);
+      const ws = fs.createWriteStream(outputFilename);
+      write(results, { headers: true })
+        .pipe(ws)
+        .on('finish', () => {
+          console.log(`Conversion complete. The updated addresses are saved in '${outputFilename}'.`);
+          resolve();
+        })
+        .on('error', (err) => {
+          console.error('Error writing output file:', err.message);
+          reject(err);
+        });
+    });
   }
 }
 
-function writeResultsToFile() {
-  const ws = fs.createWriteStream(outputFilename);
-  write(results, { headers: true })
-    .pipe(ws)
-    .on('finish', () => {
-      console.log(`Conversion complete. The updated addresses are saved in '${outputFilename}'.`);
-    });
-}
-
+// Export main for CLI use
 module.exports = main;
 
+// If run directly, call main()
 if (require.main === module) {
-    main();
+  main();
 }

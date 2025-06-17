@@ -107,17 +107,36 @@ function cleanupAtprotoExport() {
     }
 }
 
+function cleanupGeneratedFiles() {
+    const files = [
+        path.join(__dirname, 'AccountHandles.csv'),
+        path.join(__dirname, 'BlueSkyHandles.txt'),
+        path.join(__dirname, 'output.csv')
+    ];
+    for (const file of files) {
+        if (fs.existsSync(file)) {
+            try {
+                fs.unlinkSync(file);
+                // Optionally, log: console.log(`Deleted ${file}`);
+            } catch (err) {
+                console.warn(`Could not delete ${file}: ${err.message}`);
+            }
+        }
+    }
+}
+
 async function mainMenu() {
     printHeader();
     const options = [
-        'Convert Mastodon CSV to Bluesky (masto-to-bsky)',
-        'Convert Bluesky follows to Mastodon handles (bsky-to-masto)',
+        'Convert Mastodon CSV to Bluesky (Mastodon to Bluesky)',
+        'Convert Bluesky follows to Mastodon handles (Bluesky to Mastodon)',
         'Export atproto data (export-atproto)',
         'Exit'
     ];
     const index = readlineSync.keyInSelect(options, 'Select an action:');
     if (index === -1 || options[index] === 'Exit') {
         cleanupAtprotoExport();
+        cleanupGeneratedFiles(); // <-- Only clean up on exit/cancel
         console.log('Goodbye!');
         process.exit(0);
     }
@@ -126,7 +145,8 @@ async function mainMenu() {
             const inputCsv = readlineSync.question('Enter the path to the Mastodon CSV file: ');
             const check = readlineSync.keyInYNStrict('Check account existence?');
             console.log('Running mastoToBsky...');
-            runScript(path.join(__dirname, 'mastoToBsky.js'), [inputCsv, ...(check ? ['-c'] : [])]);
+            const mastoToBsky = require('./mastoToBsky.js');
+            await mastoToBsky([inputCsv, ...(check ? ['-c'] : [])]);
             break;
         }
         case 1: { // bsky-to-masto (from exported follows)
@@ -138,7 +158,7 @@ async function mainMenu() {
                 console.log('Using exported follows from:', followPath);
             } catch (err) {
                 console.error('Error exporting follows:', err.message);
-                return;
+                return mainMenu();
             }
             let args = [followPath]; // This is the directory to pass!
             if (readlineSync.keyInYNStrict('Test mode?')) {
@@ -166,7 +186,8 @@ async function mainMenu() {
         default:
             console.log('Unknown option.');
     }
-    setTimeout(mainMenu, 500);
+    // Only call mainMenu again after the operation is finished
+    await mainMenu();
 }
 
 mainMenu();
