@@ -228,12 +228,16 @@ async function main(args = process.argv.slice(2)) {
             { id: 'handle', title: 'Handle' },
             { id: 'link', title: 'Link' }
         ],
-        append: csvPath ? true : false
+        append: false // Always overwrite for clarity
     });
 
-    csvWriterInstance.writeRecords(mastodonHandles)
-        .then(() => console.log('\nCSV file created successfully.'))
-        .catch(err => console.error('Error writing CSV:', err));
+    if (mastodonHandles.length === 0) {
+        console.log('\nNo Mastodon accounts found. CSV will not be updated.');
+    } else {
+        csvWriterInstance.writeRecords(mastodonHandles)
+            .then(() => console.log('\nCSV file created successfully.'))
+            .catch(err => console.error('Error writing CSV:', err));
+    }
 
     if (errors.length > 0) {
         console.error('\nErrors encountered during fetching:');
