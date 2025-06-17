@@ -1,68 +1,80 @@
-# Bridgy Check
+# Fediverse Radar
 
-This tool intakes your followed users export from Mastodon and checks to see if they have a corresponding bridged account using [Bridgy Fed](https://fed.brid.gy/)
+This tool helps you bridge your Mastodon and Bluesky accounts by checking for bridged accounts and exporting/importing follows.  
+**All features are now accessible through the interactive CLI: `fediverse-radar.js`.**
+
+---
 
 ## Usage
 
-To check for bridged BlueSky accounts from a Mastodon following accounts CSV file, use the following command:
+### 1. Install dependencies
 
 ```sh
-node mastoToBsky.js <name_of_mastodon_following_accounts.csv>
+npm install
 ```
 
-### Using the `-c` flag with mastoToBsky.js
-
-The `-c` flag will re-check all converted accounts in your CSV file, verifying that each one still exists and is reachable. This is useful if you want to validate or refresh an existing output file.
-
-Example usage:
+### 2. Start the CLI
 
 ```sh
-node mastoToBsky.js <name_of_mastodon_following_accounts.csv> -c
+node fediverse-radar.js
 ```
 
-When you use the `-c` flag, the script will:
-- Convert each Mastodon account address to its bridged BlueSky format.
-- Check if the corresponding BlueSky account exists and is reachable.
-- Only output accounts that are confirmed to exist.
+You will be presented with an interactive menu to:
 
-## bskyToMasto.js
+- Convert Mastodon CSV to Bluesky (Mastodon to Bluesky)
+- Convert Bluesky follows to Mastodon handles (Bluesky to Mastodon)
+- Export atproto data
+- Exit
 
-I've also added bskyToMasto.js which checks Mastodon for bridged BSKY accounts. Currently this functionality is super dirty and requires you download an account export using [this tool](https://github.com/rdp-studio/atproto-export/tree/main), which you then take the app.bsky.graph.follow folder and use it as a command line arg for the js file.
+---
 
-Example:
-```sh
-node bskyToMasto.js <path>\<to>\app.bsky.graph.follow
-```
+## Features
 
-### Flags
+### Convert Mastodon CSV to Bluesky
 
-#### `-c` flag (bskyToMasto.js)
-The `-c` flag allows you to specify an existing CSV file to check against. This will filter out handles that already exist in the CSV file, so they are not checked again.
+- Takes your Mastodon following accounts CSV export and checks for corresponding bridged Bluesky accounts using [Bridgy Fed](https://fed.brid.gy/).
+- Optionally checks if each converted account still exists and is reachable.
 
-Example:
-```sh
-node bskyToMasto.js <path>\<to>\app.bsky.graph.follow -c <name_of_mastodon_following_accounts.csv>
-```
+### Convert Bluesky follows to Mastodon handles
 
-#### `-t` flag
-The `-t` flag allows you to specify the number of entries to process. This is useful for testing with a smaller subset of data.
+- Exports your Bluesky follows using [atproto-export](https://github.com/rdp-studio/atproto-export) (automatically handled by the CLI).
+- Checks Mastodon for bridged Bluesky accounts.
+- Supports filtering, test mode, and using existing handle files.
 
-Example:
-```sh
-node bskyToMasto.js <path>\<to>\app.bsky.graph.follow -t 20
-```
+### Export atproto data
 
-#### `-e` flag
-The `-e` flag allows you to use an existing `BlueSkyHandles.txt` file instead of extracting handles from the JSON files again.
+- Exports your Bluesky account data using [atproto-export](https://github.com/rdp-studio/atproto-export).
+- The CLI will prompt for your handle or DID and manage the export process for you.
 
-Example:
-```sh
-node bskyToMasto.js -e
-```
+---
 
-### Future Plans
-I think next I'm going to try to eventually integrate [rdp-studio's code](https://github.com/rdp-studio/atproto-export/tree/main) so the tool will automatically get the export for you instead of you needing to do it yourself.
+## Output
 
-I also would like to make a handler for all this so you don't need to run these from the terminal.
+- Results are saved as `output.csv` in your project directory.
+- Temporary files and exports are cleaned up when you exit the CLI.
 
-I know this is all very sparse, I will make it prettier in time I promise
+---
+
+## No Direct Script Usage
+
+**You no longer need to run `mastoToBsky.js` or `bskyToMasto.js` directly.**  
+All functionality is available through the interactive CLI (`fediverse-radar.js`).
+
+---
+
+## Future Plans
+
+- Further integration and automation of export/import flows.
+- Improved error handling and user experience.
+- More output and filtering options.
+
+---
+
+## Credits
+
+- [Bridgy Fed](https://fed.brid.gy/)
+- [atproto-export](https://github.com/rdp-studio/atproto-export)
+
+---
+
+_This project is a work in progress. Contributions and feedback are welcome!_
