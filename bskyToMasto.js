@@ -120,49 +120,52 @@ function readHandlesFromFile(filePath) {
 }
 
 // Main function
-async function main() {
-    const testModeIndex = process.argv.indexOf('-t');
-    const checkMode = process.argv.includes('-c');
-    const existingCsvPath = checkMode && process.argv[process.argv.indexOf('-c') + 1] ? process.argv[process.argv.indexOf('-c') + 1] : null;
-    const useExistingHandles = process.argv.includes('-e');
-    const mastodonInstanceInput = readlineSync.question('Enter your Mastodon instance (e.g., furries.club): ');
-    const outputInstance = mastodonInstanceInput; // Store the user-entered instance for output
+async function main(args = process.argv.slice(2)) {
+    let directory = null;
+    let csvPath = null;
+    let testMode = false;
+    let testNum = 0;
+    let useExisting = false;
 
-    if (!useExistingHandles && process.argv.length < 3) {
-        console.error('Please provide the directory path as an argument or use the -e flag.');
-        return;
-    }
-
-    if (checkMode && !existingCsvPath) {
-        console.error("Please provide a CSV file path after the -c flag.");
-        return;
-    }
-
-    let numEntries = null;
-    if (testModeIndex !== -1 && process.argv[testModeIndex + 1]) {
-        numEntries = parseInt(process.argv[testModeIndex + 1], 10);
-        if (isNaN(numEntries)) {
-            console.error("Invalid number of entries specified after the -t flag.");
-            return;
+    // Parse arguments
+    for (let i = 0; i < args.length; i++) {
+        if (args[i] === '-c' && args[i + 1]) {
+            csvPath = args[i + 1];
+            i++;
+        } else if (args[i] === '-t' && args[i + 1]) {
+            testMode = true;
+            testNum = parseInt(args[i + 1], 10);
+            i++;
+        } else if (args[i] === '-e') {
+            useExisting = true;
+        } else if (!directory) {
+            directory = args[i];
         }
     }
 
+    if (!directory && !useExisting) {
+        console.error('Please provide the directory path as an argument or use the -e flag.');
+        process.exit(1);
+    }
+
+    const mastodonInstanceInput = readlineSync.question('Enter your Mastodon instance (e.g., furries.club): ');
+    const outputInstance = mastodonInstanceInput; // Store the user-entered instance for output
+
     let handles = [];
-    if (useExistingHandles) {
+    if (useExisting) {
         handles = readHandlesFromFile('BlueSkyHandles.txt');
         if (handles.length === 0) {
             console.error("No handles found in BlueSkyHandles.txt.");
             return;
         }
     } else {
-        const directory = process.argv[2];
-        handles = await extractHandles(directory, mastodonInstanceInput, numEntries);
+        handles = await extractHandles(directory, mastodonInstanceInput, testMode ? testNum : null);
         writeHandlesToFile(handles);
     }
 
     let existingHandles = [];
-    if (checkMode && existingCsvPath) {
-        existingHandles = readExistingCSV(existingCsvPath);
+    if (csvPath) {
+        existingHandles = readExistingCSV(csvPath);
         // console.log("Existing Handles (Length: " + existingHandles.length + "):", existingHandles);
     }
 
@@ -225,7 +228,7 @@ async function main() {
             { id: 'handle', title: 'Handle' },
             { id: 'link', title: 'Link' }
         ],
-        append: checkMode && existingCsvPath ? true : false
+        append: csvPath ? true : false
     });
 
     csvWriterInstance.writeRecords(mastodonHandles)
@@ -238,4 +241,8 @@ async function main() {
     }
 }
 
-main();
+module.exports = main;
+
+if (require.main === module) {
+    main();
+}

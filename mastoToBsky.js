@@ -95,3 +95,9 @@ function writeResultsToFile() {
       console.log(`Conversion complete. The updated addresses are saved in '${outputFilename}'.`);
     });
 }
+
+module.exports = main;
+
+if (require.main === module) {
+    main();
+}
