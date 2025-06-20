@@ -130,13 +130,13 @@ async function mainMenu() {
     const options = [
         'Convert Mastodon CSV to Bluesky (Mastodon to Bluesky)',
         'Convert Bluesky follows to Mastodon handles (Bluesky to Mastodon)',
-        'Export atproto data (export-atproto)',
-        'Exit'
+        'Export atproto data (export-atproto)'
     ];
-    const index = readlineSync.keyInSelect(options, 'Select an action:');
-    if (index === -1 || options[index] === 'Exit') {
+    // Relabel "Cancel" to "Exit"
+    const index = readlineSync.keyInSelect(options, 'Select an action:', { cancel: 'Exit' });
+    if (index === -1) {
         cleanupAtprotoExport();
-        cleanupGeneratedFiles(); // <-- Only clean up on exit/cancel
+        cleanupGeneratedFiles();
         console.log('Goodbye!');
         process.exit(0);
     }
