@@ -144,9 +144,16 @@ async function mainMenu() {
         case 0: { // masto-to-bsky
             const inputCsv = readlineSync.question('Enter the path to the Mastodon CSV file: ');
             const check = readlineSync.keyInYNStrict('Check account existence?');
+            // --- Add this block for follow-check ---
+            let followCheckArgs = [];
+            if (readlineSync.keyInYNStrict('Omit accounts you already follow on Bluesky?')) {
+                const bskyHandleOrDid = readlineSync.question('Enter your Bluesky handle or DID: ');
+                followCheckArgs = ['-f', bskyHandleOrDid];
+            }
+            // --- End block ---
             console.log('Running mastoToBsky...');
             const mastoToBsky = require('./mastoToBsky.js');
-            await mastoToBsky([inputCsv, ...(check ? ['-c'] : [])]);
+            await mastoToBsky([inputCsv, ...(check ? ['-c'] : []), ...followCheckArgs]);
             break;
         }
         case 1: { // bsky-to-masto (from exported follows)
