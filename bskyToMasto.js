@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const csvWriter = require('csv-writer').createObjectCsvWriter;
 const axios = require('axios');
 const readlineSync = require('readline-sync');
 const { parse } = require('csv-parse/sync');
@@ -119,6 +118,20 @@ function readHandlesFromFile(filePath) {
     }
 }
 
+const csvFilePath = 'AccountHandles.csv';
+
+// Initialize CSV file with headers (overwrite at start)
+function initializeCSV() {
+    const headers = 'Handle,Link\n';
+    fs.writeFileSync(csvFilePath, headers, 'utf8');
+}
+
+// Append a single record to the CSV
+function appendToCSV(handle, link) {
+    const row = `"${handle}","${link}"\n`;
+    fs.appendFileSync(csvFilePath, row, 'utf8');
+}
+
 // Main function
 async function main(args = process.argv.slice(2)) {
     let directory = null;
@@ -177,6 +190,9 @@ async function main(args = process.argv.slice(2)) {
     let instanceIndex = 0;
     let checkCount = 0;
 
+    // Initialize CSV at the start
+    initializeCSV();
+
     for (let i = 0; i < filteredHandles.length; i++) {
         let handle = filteredHandles[i].trim();
         const fullHandle = `@${handle}@bsky.brid.gy`;
@@ -190,14 +206,14 @@ async function main(args = process.argv.slice(2)) {
             checkCount = 0;
         }
 
-        const mastodonCheckResult = await checkMastodonAccount(handle, mastodonInstanceInput); // Pass the user-input instance
+        const mastodonCheckResult = await checkMastodonAccount(handle, mastodonInstanceInput);
         const mastodonExists = mastodonCheckResult.exists;
         const mastodonInstanceChecked = mastodonCheckResult.instance;
 
         if (mastodonCheckResult.rateLimited) {
             instanceIndex++;
             checkCount = 0;
-            i--; // Re-check the current handle with the next instance
+            i--;
             continue;
         }
 
@@ -205,10 +221,8 @@ async function main(args = process.argv.slice(2)) {
             process.stdout.clearLine();
             process.stdout.cursorTo(0);
             process.stdout.write(`Checking handle ${i + 1}/${filteredHandles.length} (${handle})... (Found on Mastodon)\r`);
-            mastodonHandles.push({
-                handle: fullHandle,
-                link: `https://${outputInstance}/@${handle}@bsky.brid.gy` // Always use user-input instance
-            });
+            const link = `https://${outputInstance}/@${handle}@bsky.brid.gy`;
+            appendToCSV(fullHandle, link); // Write immediately
         } else {
             process.stdout.clearLine();
             process.stdout.cursorTo(0);
@@ -220,23 +234,6 @@ async function main(args = process.argv.slice(2)) {
         }
 
         checkCount++;
-    }
-
-    const csvWriterInstance = csvWriter({
-        path: 'AccountHandles.csv',
-        header: [
-            { id: 'handle', title: 'Handle' },
-            { id: 'link', title: 'Link' }
-        ],
-        append: false // Always overwrite for clarity
-    });
-
-    if (mastodonHandles.length === 0) {
-        console.log('\nNo Mastodon accounts found. CSV will not be updated.');
-    } else {
-        csvWriterInstance.writeRecords(mastodonHandles)
-            .then(() => console.log('\nCSV file created successfully.'))
-            .catch(err => console.error('Error writing CSV:', err));
     }
 
     if (errors.length > 0) {
