@@ -33,7 +33,10 @@ You will be presented with an interactive menu to:
 ### Convert Mastodon CSV to Bluesky
 
 - Takes your Mastodon following accounts CSV export and checks for corresponding bridged Bluesky accounts using [Bridgy Fed](https://fed.brid.gy/).
-- Optionally checks if each converted account still exists and is reachable.
+- For each converted Bluesky account, the tool checks if the account actually exists and is reachable on Bluesky.
+- Optionally, you can check your current Bluesky follows using [atproto-export](https://github.com/rdp-studio/atproto-export) to avoid including accounts you already follow.
+- Only accounts that are confirmed to exist, are accessible, and are not already followed will be included in the output.
+- The results are saved as `output.csv` in your project directory.
 
 ### Convert Bluesky follows to Mastodon handles
 
