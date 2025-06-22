@@ -148,7 +148,9 @@ async function mainMenu() {
     }
     switch (index) {
         case 0: { // Mastodon to Bluesky conversion
-            const inputCsv = readlineSync.question(chalk.bold('Enter the path to the Mastodon CSV file: '));
+            let inputCsv = readlineSync.question(chalk.bold('Enter the path to the Mastodon CSV file: '));
+            // Sanitize: remove leading/trailing quotes (single or double)
+            inputCsv = inputCsv.trim().replace(/^['"]+|['"]+$/g, '');
             const check = readlineSync.keyInYNStrict(chalk.yellow('Check account existence?'));
             let followCheckArgs = [];
             if (readlineSync.keyInYNStrict(chalk.yellow('Omit accounts you already follow on Bluesky?'))) {
@@ -188,7 +190,9 @@ async function mainMenu() {
             }
             let args = [followPath];
             if (readlineSync.keyInYNStrict(chalk.yellow('Check mode (filter duplicates with CSV)?'))) {
-                const csvPath = readlineSync.question(chalk.bold('Enter the path to the existing CSV: '));
+                let csvPath = readlineSync.question(chalk.bold('Enter the path to the existing CSV: '));
+                // Sanitize: remove leading/trailing quotes (single or double)
+                csvPath = csvPath.trim().replace(/^['"]+|['"]+$/g, '');
                 args.push('-c', csvPath);
             }
             console.log(chalk.cyan('Running bskyToMasto...'));
