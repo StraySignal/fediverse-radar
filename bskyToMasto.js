@@ -215,8 +215,12 @@ async function main(args = process.argv.slice(2)) {
         process.exit(1);
     }
 
-    const mastodonInstanceInput = readlineSync.question(chalk.bold('Enter your Mastodon instance (e.g., mastodon.social): '));
-    const outputInstance = mastodonInstanceInput;
+    const mastodonInstanceInput = readlineSync.question(
+        chalk.bold('Enter the Mastodon instance to CHECK (e.g., mastodon.social): ')
+    );
+    const outputInstance = readlineSync.question(
+        chalk.bold('Enter the Mastodon instance to WRITE (e.g., vivaldi.social): ')
+    );
 
     let handles = [];
     if (useExisting) {
@@ -258,6 +262,7 @@ async function main(args = process.argv.slice(2)) {
             checkCount = 0;
         }
 
+        // Check existence on the CHECK instance
         const mastodonCheckResult = await checkMastodonAccount(handle, mastodonInstanceInput);
         const mastodonExists = mastodonCheckResult.exists;
         const mastodonInstanceChecked = mastodonCheckResult.instance;
@@ -273,6 +278,7 @@ async function main(args = process.argv.slice(2)) {
             process.stdout.clearLine();
             process.stdout.cursorTo(0);
             process.stdout.write(chalk.green(`Checking handle ${i + 1}/${filteredHandles.length} (${handle})... (Found on Mastodon)\r`));
+            // Write the link for the WRITE instance
             const link = `https://${outputInstance}/@${handle}@bsky.brid.gy`;
             appendToCSV(fullHandle, link);
         } else {
