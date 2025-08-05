@@ -118,7 +118,8 @@ function cleanupGeneratedFiles() {
     const files = [
         path.join(__dirname, 'AccountHandles.csv'),
         path.join(__dirname, 'BlueSkyHandles.txt'),
-        path.join(__dirname, 'output.csv')
+        path.join(__dirname, 'output.csv'),
+        path.join(__dirname, 'output.html')
     ];
     for (const file of files) {
         if (fs.existsSync(file)) {
