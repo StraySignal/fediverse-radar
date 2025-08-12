@@ -7,3 +7,4 @@ output.html
 *.config
 !bskytomasto.config
 !mastotobsky.config
+UnbridgedAccounts.csv
