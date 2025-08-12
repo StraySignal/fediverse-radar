@@ -4,3 +4,5 @@ output.csv
 AccountHandles.csv
 BlueSkyHandles.txt
 output.html
+*.config
+!handle.config

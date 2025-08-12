@@ -132,6 +132,69 @@ function cleanupGeneratedFiles() {
     }
 }
 
+// Helper to parse handle.config-like files
+function parseConfigFile(configPath) {
+    const config = {};
+    const lines = fs.readFileSync(configPath, 'utf8').split(/\r?\n/);
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const [key, ...rest] = trimmed.split('=');
+        if (key && rest.length) config[key.trim()] = rest.join('=').replace(/^['"]|['"]$/g, '').trim();
+    }
+    return config;
+}
+
+// Check for -f2 flag and run in config mode if present
+if (process.argv.includes('-f2')) {
+    const idx = process.argv.indexOf('-f2');
+    const configPath = process.argv[idx + 1];
+    if (!configPath || !fs.existsSync(configPath)) {
+        console.error(chalk.red('Config file not found or not specified after -f2.'));
+        process.exit(1);
+    }
+    const config = parseConfigFile(configPath);
+
+    // Show config summary to user
+    console.log(chalk.magenta.bold('\n=== Fediverse Radar Config Mode ==='));
+    console.log(chalk.cyan('HANDLE:'), config.HANDLE || chalk.red('MISSING'));
+    console.log(chalk.cyan('CHECK_INSTANCE:'), config.CHECK_INSTANCE || chalk.red('MISSING'));
+    console.log(chalk.cyan('WRITE_INSTANCE:'), config.WRITE_INSTANCE || chalk.red('MISSING'));
+    console.log(chalk.cyan('FILE_PATH:'), config.FILE_PATH || chalk.gray('(none, will not check CSV)'));
+    console.log('');
+
+    // Validate required fields
+    if (!config.HANDLE || !config.CHECK_INSTANCE || !config.WRITE_INSTANCE) {
+        console.error(chalk.red('Config file missing required fields (HANDLE, CHECK_INSTANCE, WRITE_INSTANCE).'));
+        process.exit(1);
+    }
+
+    // Export follows if needed
+    (async () => {
+        let followPath;
+        try {
+            console.log(chalk.yellow('Ensuring atproto-export repo and exporting follows...'));
+            followPath = await ensureExportAndGetFollowPath(config.HANDLE);
+            console.log(chalk.green('Using exported follows from: ') + chalk.underline(followPath));
+        } catch (err) {
+            console.error(chalk.red('Error exporting follows: ') + chalk.redBright(err.message));
+            process.exit(1);
+        }
+        // Build args for bskyToMasto
+        let args = [followPath];
+        if (config.FILE_PATH) {
+            args.push('-c', config.FILE_PATH);
+        }
+        // Patch bskyToMasto to accept instance values via environment variables
+        process.env.BSKY_CHECK_INSTANCE = config.CHECK_INSTANCE;
+        process.env.BSKY_WRITE_INSTANCE = config.WRITE_INSTANCE;
+        const bskyToMasto = require('./bskyToMasto.js');
+        await bskyToMasto(args);
+        process.exit(0);
+    })();
+    return;
+}
+
 // Main interactive menu loop
 async function mainMenu() {
     printHeader();
