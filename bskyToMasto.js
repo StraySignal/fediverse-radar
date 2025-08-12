@@ -360,6 +360,68 @@ async function main(args = process.argv.slice(2)) {
 
     // Show percentage of bridged accounts
     showBridgedPercentage('BlueSkyHandles.txt', csvFilePath, csvPath);
+
+    // After main loop, before writing results:
+    // Find unbridged handles
+    const allHandlesSet = new Set(
+        handles
+            .filter(h => typeof h === 'string')
+            .map(h => h.trim().toLowerCase())
+    );
+    const bridgedHandlesSet = new Set();
+    // Get bridged handles from output CSV
+    const csvContent = fs.readFileSync(csvFilePath, 'utf8');
+    csvContent
+        .trim()
+        .split('\n')
+        .slice(1)
+        .forEach(line => {
+            const match = line.match(/"@([^@]+)@bsky\.brid\.gy"/);
+            if (match) bridgedHandlesSet.add(match[1].toLowerCase());
+        });
+
+    // Also add already-followed bridged handles from masto CSV if present
+    if (csvPath) {
+        try {
+            const fileContent = fs.readFileSync(csvPath, 'utf8');
+            const records = parse(fileContent, {
+                columns: true,
+                skip_empty_lines: true
+            });
+            records.forEach(record => {
+                const address = record['Account address'];
+                if (address && address.endsWith('@bsky.brid.gy')) {
+                    const h = address.split('@')[0].replace(/^@/, '').toLowerCase();
+                    bridgedHandlesSet.add(h);
+                }
+            });
+        } catch (e) {
+            console.error(chalk.red('Error reading Mastodon CSV for already-followed accounts:'), e.message);
+        }
+    }
+
+    const unbridgedHandles = Array.from(allHandlesSet).filter(h => !bridgedHandlesSet.has(h));
+
+    if (unbridgedHandles.length > 0) {
+        const wantUnbridged = readlineSync.keyInYNStrict(
+            chalk.bold('\nDo you want to output a file of all accounts that are NOT bridged?')
+        );
+        if (wantUnbridged) {
+            const wantMsg = readlineSync.keyInYNStrict(
+                chalk.bold('Do you want to include a bridge request message for each account?')
+            );
+            // Prepare output
+            let output = 'Handle,BlueSky Link' + (wantMsg ? ',Bridge Request Message' : '') + '\n';
+            unbridgedHandles.forEach(handle => {
+                const bskyLink = `https://bsky.app/profile/${handle}`;
+                const msg = wantMsg ? `"@bsky.brid.gy@bsky.brid.gy ${handle}"` : '';
+                output += `${handle},${bskyLink}${wantMsg ? ',' + msg : ''}\n`;
+            });
+            const outFile = 'UnbridgedAccounts.csv';
+            fs.writeFileSync(outFile, output, 'utf8');
+            console.log(chalk.yellow(`\nUnbridged account list saved as ${outFile} (${unbridgedHandles.length} entries).`));
+        }
+    }
 }
 
 module.exports = main;
