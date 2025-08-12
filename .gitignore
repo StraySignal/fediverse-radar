@@ -4,4 +4,7 @@ output.csv
 AccountHandles.csv
 BlueSkyHandles.txt
 output.html
+*.config
+!bskytomasto.config
+!mastotobsky.config
 UnbridgedAccounts.csv

@@ -43,9 +43,14 @@ You will be presented with an interactive, colorized menu to:
 
 - Exports your Bluesky follows using [atproto-export](https://github.com/rdp-studio/atproto-export) (automatically handled by the CLI).
 - Checks Mastodon for bridged Bluesky accounts.
+- **You can now specify separate Mastodon instances for checking account existence and for writing output links.**
 - Supports filtering, test mode, and using existing handle files.
 - Results are saved as `AccountHandles.csv` and a styled `output.html`.
 - After conversion, you will be prompted to open the HTML report in your default browser (cross-platform, **see Windows note below**).
+- **At the end of the run, you will see a summary of what percentage of your Bluesky follows are available to your Mastodon account, including already-followed bridged accounts if you provide a Mastodon CSV.**
+- **You will be prompted to optionally output a file of all unbridged accounts, and can also generate a preformatted bridge request message for each.**  
+  - The output file (`UnbridgedAccounts.csv`) will include the handle, a link to the Bluesky profile, and (optionally) a message in the format:  
+    `@bsky.brid.gy@bsky.brid.gy <bsky account handle>`
 
 ### Export atproto data
 
@@ -54,18 +59,73 @@ You will be presented with an interactive, colorized menu to:
 
 ---
 
+## Automated Config-Driven Runs (`-f1` and `-f2` flags)
+
+You can run both Mastodon-to-Bluesky and Bluesky-to-Mastodon conversions non-interactively using a config file.
+
+### Config File Format
+
+The config file is formatted the same for both flags. Example (`handle.config`):
+
+```
+HANDLE=your.bsky.handle
+CHECK_INSTANCE=mastodon.social
+WRITE_INSTANCE=vivaldi.social
+FILE_PATH=/path/to/your_mastodon_follows.csv
+```
+
+- `HANDLE`: Your Bluesky handle (required)
+- `CHECK_INSTANCE`: Mastodon instance to check for account existence (required)
+- `WRITE_INSTANCE`: Mastodon instance to use for output links (required)
+- `FILE_PATH`: Path to your Mastodon follows CSV (required for Mastodon-to-Bluesky, optional for Bluesky-to-Mastodon)
+
+### Mastodon to Bluesky (use `-f1`)
+
+```sh
+node fediverse-radar.js -f1 handle.config
+```
+
+- Parses the config file and shows a summary of the values.
+- Converts your Mastodon follows to Bluesky, using the specified options.
+- Runs non-interactively.
+
+### Bluesky to Mastodon (use `-f2`)
+
+```sh
+node fediverse-radar.js -f2 handle.config
+```
+
+- Parses the config file and shows a summary of the values.
+- Exports your Bluesky follows and checks for bridged Mastodon accounts, using the specified options.
+- If `FILE_PATH` is provided, already-followed bridged accounts are included in stats and filtering.
+- Runs non-interactively.
+
+---
+
 ## Output
 
 - Results are saved as `output.csv` and/or `AccountHandles.csv` in your project directory.
 - A styled `output.html` report is generated for easy viewing in your browser.
+- If you choose, a file of unbridged accounts (`UnbridgedAccounts.csv`) will be generated, including optional bridge request messages.
 - Temporary files and exports are cleaned up when you exit the CLI.
+
+---
+
+## Follow Stats & Unbridged Accounts
+
+- After a Bluesky-to-Mastodon run, you will see a summary like:
+  ```
+  179 of 2186 BlueSky follows are now available to your Mastodon account (including already-followed). (8.19%)
+  ```
+- If you provide a Mastodon CSV, the tool will include already-followed bridged accounts in the percentage.
+- You can output a file of all unbridged accounts, and optionally include a preformatted message for requesting a bridge for each account.
 
 ---
 
 ## No Direct Script Usage
 
 **You no longer need to run `mastoToBsky.js` or `bskyToMasto.js` directly.**  
-All functionality is available through the interactive CLI (`fediverse-radar.js`).
+All functionality is available through the interactive CLI (`fediverse-radar.js`) or the config modes (`-f1` and `-f2`).
 
 ---
 

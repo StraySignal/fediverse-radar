@@ -271,12 +271,14 @@ async function main(args = process.argv.slice(2)) {
         process.exit(1);
     }
 
-    const mastodonInstanceInput = readlineSync.question(
-        chalk.bold('Enter the Mastodon instance to CHECK (e.g., mastodon.social): ')
-    );
-    const outputInstance = readlineSync.question(
-        chalk.bold('Enter the Mastodon instance to WRITE (e.g., vivaldi.social): ')
-    );
+    const mastodonInstanceInput = process.env.BSKY_CHECK_INSTANCE ||
+        readlineSync.question(
+            chalk.bold('Enter the Mastodon instance to CHECK (e.g., mastodon.social): ')
+        );
+    const outputInstance = process.env.BSKY_WRITE_INSTANCE ||
+        readlineSync.question(
+            chalk.bold('Enter the Mastodon instance to WRITE (e.g., vivaldi.social): ')
+        );
 
     let handles = [];
     if (useExisting) {
@@ -357,6 +359,18 @@ async function main(args = process.argv.slice(2)) {
 
     // Write results to HTML at the end
     writeResultsToHtml();
+
+    // Always prompt to open the HTML report
+    const wantOpenHtml = readlineSync.keyInYNStrict(
+        chalk.bold('\nDo you want to open the output.html report in your browser?')
+    );
+    if (wantOpenHtml) {
+        try {
+            await open('output.html');
+        } catch (err) {
+            console.error(chalk.red('Could not open output.html in browser:'), err.message);
+        }
+    }
 
     // Show percentage of bridged accounts
     showBridgedPercentage('BlueSkyHandles.txt', csvFilePath, csvPath);
