@@ -140,9 +140,7 @@ All functionality is available through the interactive CLI (`fediverse-radar.js`
 
 ## Future Plans
 
-- Further integration and automation of export/import flows.
-- Improved error handling and user experience.
-- More output and filtering options.
+- a GUI would be nice!
 
 ---
 
