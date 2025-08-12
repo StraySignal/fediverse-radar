@@ -140,6 +140,9 @@ async function getFollowedHandlesFromDids(didSet) {
   return handles;
 }
 
+const mastodonInstanceInput = process.env.BSKY_CHECK_INSTANCE || 'mastodon.social';
+const outputInstance = process.env.BSKY_WRITE_INSTANCE || 'bsky.brid.gy';
+
 // Main entry point for the conversion process
 async function main(args = process.argv.slice(2)) {
   const inputFilename = args[0];

@@ -5,4 +5,5 @@ AccountHandles.csv
 BlueSkyHandles.txt
 output.html
 *.config
-!handle.config
+!bskytomasto.config
+!mastotobsky.config

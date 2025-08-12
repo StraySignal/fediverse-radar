@@ -59,29 +59,46 @@ You will be presented with an interactive, colorized menu to:
 
 ---
 
-## Automated Config-Driven Runs (`-f2` flag)
+## Automated Config-Driven Runs (`-f1` and `-f2` flags)
 
-You can run the Bluesky-to-Mastodon conversion non-interactively using a config file:
+You can run both Mastodon-to-Bluesky and Bluesky-to-Mastodon conversions non-interactively using a config file.
 
-1. **Create a config file** (e.g. `handle.config`) with the following format:
-    ```
-    HANDLE=your.bsky.handle
-    CHECK_INSTANCE=mastodon.social
-    WRITE_INSTANCE=vivaldi.social
-    FILE_PATH=/path/to/your_mastodon_follows.csv   # (optional)
-    ```
+### Config File Format
 
-2. **Run the tool with the config:**
-    ```sh
-    node fediverse-radar.js -f2 handle.config
-    ```
+The config file is formatted the same for both flags. Example (`handle.config`):
 
-- The script will:
-  - Parse the config file and show you a summary of the values.
-  - Export your Bluesky follows.
-  - Use the specified Mastodon instance for checking and another for writing output links.
-  - If `FILE_PATH` is provided, it will include already-followed bridged accounts in the stats and filtering.
-  - Run without any interactive prompts.
+```
+HANDLE=your.bsky.handle
+CHECK_INSTANCE=mastodon.social
+WRITE_INSTANCE=vivaldi.social
+FILE_PATH=/path/to/your_mastodon_follows.csv
+```
+
+- `HANDLE`: Your Bluesky handle (required)
+- `CHECK_INSTANCE`: Mastodon instance to check for account existence (required)
+- `WRITE_INSTANCE`: Mastodon instance to use for output links (required)
+- `FILE_PATH`: Path to your Mastodon follows CSV (required for Mastodon-to-Bluesky, optional for Bluesky-to-Mastodon)
+
+### Mastodon to Bluesky (use `-f1`)
+
+```sh
+node fediverse-radar.js -f1 handle.config
+```
+
+- Parses the config file and shows a summary of the values.
+- Converts your Mastodon follows to Bluesky, using the specified options.
+- Runs non-interactively.
+
+### Bluesky to Mastodon (use `-f2`)
+
+```sh
+node fediverse-radar.js -f2 handle.config
+```
+
+- Parses the config file and shows a summary of the values.
+- Exports your Bluesky follows and checks for bridged Mastodon accounts, using the specified options.
+- If `FILE_PATH` is provided, already-followed bridged accounts are included in stats and filtering.
+- Runs non-interactively.
 
 ---
 
@@ -108,7 +125,7 @@ You can run the Bluesky-to-Mastodon conversion non-interactively using a config 
 ## No Direct Script Usage
 
 **You no longer need to run `mastoToBsky.js` or `bskyToMasto.js` directly.**  
-All functionality is available through the interactive CLI (`fediverse-radar.js`) or the config mode (`-f2`).
+All functionality is available through the interactive CLI (`fediverse-radar.js`) or the config modes (`-f1` and `-f2`).
 
 ---
 

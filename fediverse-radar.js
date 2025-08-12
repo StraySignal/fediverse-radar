@@ -195,6 +195,53 @@ if (process.argv.includes('-f2')) {
     return;
 }
 
+// Check for -f1 flag and run in config mode if present
+if (process.argv.includes('-f1')) {
+    const idx = process.argv.indexOf('-f1');
+    const configPath = process.argv[idx + 1];
+    if (!configPath || !fs.existsSync(configPath)) {
+        console.error(chalk.red('Config file not found or not specified after -f1.'));
+        process.exit(1);
+    }
+    const config = parseConfigFile(configPath);
+
+    // Show config summary to user
+    console.log(chalk.magenta.bold('\n=== Fediverse Radar Config Mode (Mastodon to Bluesky) ==='));
+    console.log(chalk.cyan('HANDLE:'), config.HANDLE || chalk.red('MISSING'));
+    console.log(chalk.cyan('CHECK_INSTANCE:'), config.CHECK_INSTANCE || chalk.red('MISSING'));
+    console.log(chalk.cyan('WRITE_INSTANCE:'), config.WRITE_INSTANCE || chalk.red('MISSING'));
+    console.log(chalk.cyan('FILE_PATH:'), config.FILE_PATH || chalk.red('MISSING'));
+    console.log('');
+
+    // Validate required fields
+    if (!config.FILE_PATH) {
+        console.error(chalk.red('Config file missing required field: FILE_PATH (Mastodon CSV).'));
+        process.exit(1);
+    }
+
+    // Build args for mastoToBsky
+    let args = [config.FILE_PATH];
+    // If you want to check account existence, use -c
+    if (config.CHECK_INSTANCE) {
+        args.push('-c');
+    }
+    // If you want to omit already-followed accounts, use -f and HANDLE
+    if (config.HANDLE) {
+        args.push('-f', config.HANDLE);
+    }
+
+    // Patch mastoToBsky to accept instance values via environment variables
+    process.env.BSKY_CHECK_INSTANCE = config.CHECK_INSTANCE || '';
+    process.env.BSKY_WRITE_INSTANCE = config.WRITE_INSTANCE || '';
+
+    (async () => {
+        const mastoToBsky = require('./mastoToBsky.js');
+        await mastoToBsky(args);
+        process.exit(0);
+    })();
+    return;
+}
+
 // Main interactive menu loop
 async function mainMenu() {
     printHeader();
