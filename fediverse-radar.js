@@ -190,6 +190,14 @@ if (process.argv.includes('-f2')) {
         process.env.BSKY_WRITE_INSTANCE = config.WRITE_INSTANCE;
         const bskyToMasto = require('./bskyToMasto.js');
         await bskyToMasto(args);
+
+        // Prompt for cleanup after run
+        if (readlineSync.keyInYNStrict(chalk.yellow('\nWould you like to clean up the atproto-export directory and generated files?'))) {
+            cleanupAtprotoExport();
+            cleanupGeneratedFiles();
+            console.log(chalk.green('Cleanup complete.'));
+        }
+
         process.exit(0);
     })();
     return;
@@ -237,6 +245,14 @@ if (process.argv.includes('-f1')) {
     (async () => {
         const mastoToBsky = require('./mastoToBsky.js');
         await mastoToBsky(args);
+
+        // Prompt for cleanup after run
+        if (readlineSync.keyInYNStrict(chalk.yellow('\nWould you like to clean up the atproto-export directory and generated files?'))) {
+            cleanupAtprotoExport();
+            cleanupGeneratedFiles();
+            console.log(chalk.green('Cleanup complete.'));
+        }
+
         process.exit(0);
     })();
     return;
