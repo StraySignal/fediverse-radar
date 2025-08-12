@@ -186,6 +186,62 @@ function writeResultsToHtml() {
     }
 }
 
+// Calculate and display the percentage of bridged accounts found, including already-followed
+function showBridgedPercentage(bskyHandlesPath, csvFilePath, mastoCsvPath = null) {
+    try {
+        const bskyHandles = readHandlesFromFile(bskyHandlesPath);
+        const bskySet = new Set(bskyHandles.map(h => h.trim().toLowerCase()));
+
+        // Handles found in this run
+        const csvContent = fs.readFileSync(csvFilePath, 'utf8');
+        const bridgedHandles = csvContent
+            .trim()
+            .split('\n')
+            .slice(1) // skip header
+            .map(line => {
+                const match = line.match(/"@([^@]+)@bsky\.brid\.gy"/);
+                return match ? match[1].toLowerCase() : null;
+            })
+            .filter(Boolean);
+
+        // Handles already followed in Mastodon CSV (if provided)
+        let alreadyFollowedHandles = [];
+        if (mastoCsvPath) {
+            try {
+                const fileContent = fs.readFileSync(mastoCsvPath, 'utf8');
+                const records = parse(fileContent, {
+                    columns: true,
+                    skip_empty_lines: true
+                });
+                alreadyFollowedHandles = records
+                    .map(record => {
+                        const address = record['Account address'];
+                        // Only count bsky.brid.gy accounts
+                        if (address && address.endsWith('@bsky.brid.gy')) {
+                            return address.split('@')[0].replace(/^@/, '').toLowerCase();
+                        }
+                        return null;
+                    })
+                    .filter(Boolean);
+            } catch (e) {
+                console.error(chalk.red('Error reading Mastodon CSV for already-followed accounts:'), e.message);
+            }
+        }
+
+        // Union of found + already-followed, but only those in bskyHandles
+        const bridgedSet = new Set([...bridgedHandles, ...alreadyFollowedHandles].filter(h => bskySet.has(h)));
+        const bridgedCount = bridgedSet.size;
+        const total = bskyHandles.length;
+        const percent = total > 0 ? ((bridgedCount / total) * 100).toFixed(2) : '0.00';
+
+        console.log(chalk.bold.cyan(
+            `\n${bridgedCount} of ${total} BlueSky follows are now available to your Mastodon account (including already-followed). (${percent}%)`
+        ));
+    } catch (err) {
+        console.error(chalk.red('Error calculating bridged percentage:'), err.message);
+    }
+}
+
 // Main entry point for the conversion process
 async function main(args = process.argv.slice(2)) {
     let directory = null;
@@ -301,6 +357,9 @@ async function main(args = process.argv.slice(2)) {
 
     // Write results to HTML at the end
     writeResultsToHtml();
+
+    // Show percentage of bridged accounts
+    showBridgedPercentage('BlueSkyHandles.txt', csvFilePath, csvPath);
 }
 
 module.exports = main;
