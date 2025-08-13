@@ -120,16 +120,16 @@ function readHandlesFromFile(filePath) {
 
 const csvFilePath = 'AccountHandles.csv';
 
-// Initialize the CSV file with headers (overwrites at start)
-function initializeCSV() {
-    const headers = 'Handle,Link\n';
-    fs.writeFileSync(csvFilePath, headers, 'utf8');
+// Append a single record to the CSV file (add a status column)
+function appendToCSV(handle, link, status = '') {
+    const row = `"${handle}","${link}","${status}"\n`;
+    fs.appendFileSync(csvFilePath, row, 'utf8');
 }
 
-// Append a single record to the CSV file
-function appendToCSV(handle, link) {
-    const row = `"${handle}","${link}"\n`;
-    fs.appendFileSync(csvFilePath, row, 'utf8');
+// Initialize the CSV file with headers (overwrites at start)
+function initializeCSV() {
+    const headers = 'Handle,Link,Status\n';
+    fs.writeFileSync(csvFilePath, headers, 'utf8');
 }
 
 // Write results to a styled HTML file
@@ -138,9 +138,13 @@ function writeResultsToHtml() {
         const fileContent = fs.readFileSync(csvFilePath, 'utf8');
         const lines = fileContent.trim().split('\n');
         const rows = lines.slice(1).map(line => {
-            const [handle, link] = line.match(/"([^"]*)","([^"]*)"/).slice(1, 3);
-            return { handle, link };
-        });
+            const match = line.match(/"([^"]*)","([^"]*)","([^"]*)"/);
+            if (match) {
+                const [, handle, link, status] = match;
+                return { handle, link, status };
+            }
+            return null;
+        }).filter(Boolean);
 
         const html = `
 <!DOCTYPE html>
@@ -167,11 +171,13 @@ function writeResultsToHtml() {
     <tr>
       <th>Handle</th>
       <th>Link</th>
+      <th>Status</th>
     </tr>
     ${rows.map(row => `
       <tr>
         <td>${row.handle}</td>
         <td><a href="${row.link}" target="_blank">${row.link}</a></td>
+        <td>${row.status}</td>
       </tr>
     `).join('')}
   </table>
@@ -307,6 +313,7 @@ async function main(args = process.argv.slice(2)) {
     // Initialize the CSV file
     initializeCSV();
 
+    // In your main loop, only write a row for handles that are found
     for (let i = 0; i < filteredHandles.length; i++) {
         let handle = filteredHandles[i].trim();
         const fullHandle = `@${handle}@bsky.brid.gy`;
@@ -332,13 +339,13 @@ async function main(args = process.argv.slice(2)) {
             continue;
         }
 
+        let link = `https://${outputInstance}/@${handle}@bsky.brid.gy`;
+        let status = mastodonExists ? 'Found' : `Not found on ${mastodonInstanceChecked}`;
         if (mastodonExists) {
+            appendToCSV(fullHandle, link, status);
             process.stdout.clearLine();
             process.stdout.cursorTo(0);
             process.stdout.write(chalk.green(`Checking handle ${i + 1}/${filteredHandles.length} (${handle})... (Found on Mastodon)\r`));
-            // Write the link for the WRITE instance
-            const link = `https://${outputInstance}/@${handle}@bsky.brid.gy`;
-            appendToCSV(fullHandle, link);
         } else {
             process.stdout.clearLine();
             process.stdout.cursorTo(0);
