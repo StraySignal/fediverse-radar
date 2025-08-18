@@ -266,7 +266,7 @@ async function mainMenu() {
         chalk.cyan('Convert Bluesky follows to Mastodon handles (Bluesky to Mastodon)'),
         chalk.cyan('Export atproto data (atproto-export)')
     ];
-    const index = readlineSync.keyInSelect(options, chalk.bold('Select an action:'), { cancel: chalk.red('Exit') });
+    const index = readlineSync.keyInSelect(options, chalk.bold('Select an action:'), { cancel: chalk.red('Exit/Cleanup') });
     if (index === -1) {
         cleanupAtprotoExport();
         cleanupGeneratedFiles();
