@@ -7,119 +7,6 @@ const _open = require('open');
 const chalk = require('chalk').default;
 const open = _open.default || _open;
 
-// Read all files in a directory
-function readDirectory(directory) {
-    return fs.readdirSync(directory);
-}
-
-// Read and parse a JSON file
-function readJSONFile(filePath) {
-    const fileContent = fs.readFileSync(filePath);
-    return JSON.parse(fileContent);
-}
-
-// Extract handles from JSON files in a directory
-async function extractHandles(directory, instance, numEntries) {
-    const files = readDirectory(directory);
-    let handles = [];
-    const numFilesToProcess = numEntries ? Math.min(files.length, numEntries) : files.length;
-
-    for (let i = 0; i < numFilesToProcess; i++) {
-        const filePath = path.join(directory, files[i]);
-        const jsonData = readJSONFile(filePath);
-        const did = jsonData.subject;
-
-        if (did) {
-            process.stdout.write(chalk.cyan(`Fetching handle ${i + 1}/${numFilesToProcess}...`));
-            const handle = await resolveHandleWithDelay(did, instance);
-            if (handle) {
-                handles.push(handle);
-            }
-            process.stdout.write('\r');
-        }
-    }
-
-    return handles;
-}
-
-// Resolve a DID to a handle with a delay to avoid rate limits
-async function resolveHandleWithDelay(did, instance) {
-    try {
-        const response = await axios.get(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${did}`);
-        if (response.data && response.data.handle) {
-            return response.data.handle;
-        }
-        return null;
-    } catch (error) {
-        return { error: `Error resolving handle: ${error.message}`, did };
-    } finally {
-        await delay(100);
-    }
-}
-
-// Check if a Mastodon account exists on the given instance
-async function checkMastodonAccount(handle, instance) {
-    try {
-        const response = await axios.get(`https://${instance}/api/v2/search?q=${handle}@bsky.brid.gy`);
-        if (response.data.accounts.length > 0) {
-            console.log(chalk.green(`Found on ${instance}`));
-            return { exists: true, instance };
-        }
-    } catch (error) {
-        if (error.response && error.response.status === 429) {
-            return { exists: false, instance, rateLimited: true };
-        }
-        console.error(chalk.red(`Error checking Mastodon on ${instance}:`), error.message);
-    }
-    return { exists: false, instance };
-}
-
-// Delay helper
-function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// Write BlueSky handles to a file
-function writeHandlesToFile(handles) {
-    const filePath = 'BlueSkyHandles.txt';
-    fs.writeFileSync(filePath, handles.join('\n'), 'utf8');
-    console.log(chalk.green(`BlueSky handles written to ${filePath}`));
-}
-
-// Read existing CSV and return an array of unique handles
-function readExistingCSV(csvPath) {
-    try {
-        const fileContent = fs.readFileSync(csvPath, 'utf8');
-        const records = parse(fileContent, {
-            columns: true,
-            skip_empty_lines: true
-        });
-        const handles = records.map(record => {
-            const address = record['Account address'];
-            const handle = address ? address.split('@')[0] : '';
-            return handle;
-        });
-        const uniqueHandles = handles.filter((handle, index, self) => self.indexOf(handle) === index);
-        return uniqueHandles;
-    } catch (error) {
-        console.error(chalk.red("Error reading existing CSV:"), error.message);
-        return [];
-    }
-}
-
-// Read BlueSky handles from a file
-function readHandlesFromFile(filePath) {
-    try {
-        const fileContent = fs.readFileSync(filePath, 'utf8');
-        return fileContent.split('\n').map(handle => handle.trim()).filter(handle => handle.length > 0);
-    } catch (error) {
-        console.error(chalk.red("Error reading BlueSky handles file:"), error.message);
-        return [];
-    }
-}
-
-const csvFilePath = 'AccountHandles.csv';
-
 // Append a single record to the CSV file (add a status column)
 function appendToCSV(handle, link, status = '') {
     const row = `"${handle}","${link}","${status}"\n`;
@@ -133,18 +20,98 @@ function initializeCSV() {
 }
 
 // Write results to a styled HTML file
-function writeResultsToHtml() {
+async function writeResultsToHtml(outputInstance = 'mastodon.social', existingCsvPath = null) {
+    // Read already-followed handles from the existing CSV, if provided
+    let alreadyFollowedHandles = new Set();
+    let alreadyFollowedRows = [];
+    if (existingCsvPath && fs.existsSync(existingCsvPath)) {
+        try {
+            const fileContent = fs.readFileSync(existingCsvPath, 'utf8');
+            const records = parse(fileContent, {
+                columns: true,
+                skip_empty_lines: true
+            });
+            alreadyFollowedHandles = new Set(
+                records
+                    .map(record => {
+                        const address = record['Account address'];
+                        // Only count bsky.brid.gy accounts
+                        if (address && address.endsWith('@bsky.brid.gy')) {
+                            // Add both with and without leading @ for robust comparison
+                            return [address.toLowerCase(), `@${address.toLowerCase()}`];
+                        }
+                        return [];
+                    })
+                    .flat()
+                    .filter(Boolean)
+            );
+            // Prepare already-followed rows for the HTML
+            alreadyFollowedRows = records
+                .filter(record => record['Account address'] && record['Account address'].endsWith('@bsky.brid.gy'))
+                .map(record => {
+                    const address = record['Account address'];
+                    const handle = `@${address}`;
+                    const link = `https://${outputInstance}/@${address}`;
+                    return {
+                        handle,
+                        address,
+                        link,
+                        status: 'Bridged, already followed',
+                        statusClass: 'status-red',
+                        searchLink: ''
+                    };
+                });
+        } catch (e) {
+            console.error(chalk.red('Error reading Mastodon CSV for already-followed accounts:'), e.message);
+        }
+    }
+
     try {
         const fileContent = fs.readFileSync(csvFilePath, 'utf8');
         const lines = fileContent.trim().split('\n');
-        const rows = lines.slice(1).map(line => {
+        // Only include rows where status starts with "Bridged" AND not in already-followed
+        let rows = lines.slice(1).map(line => {
             const match = line.match(/"([^"]*)","([^"]*)","([^"]*)"/);
             if (match) {
-                const [, handle, link, status] = match;
-                return { handle, link, status };
+                const [, handle, , status] = match;
+                const address = handle.replace(/^@/, ''); // e.g. monstercollie.bsky.social@bsky.brid.gy
+                const link = `https://${outputInstance}/@${address}`;
+                return { handle, address, link, status };
             }
             return null;
-        }).filter(Boolean);
+        }).filter(row =>
+            row &&
+            row.status &&
+            row.status.toLowerCase().startsWith('bridged') &&
+            !alreadyFollowedHandles.has(row.address.toLowerCase()) &&
+            !alreadyFollowedHandles.has(row.handle.toLowerCase())
+        );
+
+        // Check if the profile exists on the instance for each row
+        for (let row of rows) {
+            const exists = await checkProfileExistsOnInstance(outputInstance, row.address);
+            if (exists) {
+                row.status = `Bridged, exists on instance`;
+                row.statusClass = 'status-green';
+                row.existsOnInstance = true;
+                row.searchLink = '';
+            } else {
+                row.status = `Bridged, doesn't exist on instance`;
+                row.statusClass = 'status-orange';
+                row.existsOnInstance = false;
+                const encoded = encodeURIComponent(`@${row.address}`);
+                row.searchLink = `https://${outputInstance}/search?q=${encoded}`;
+            }
+        }
+
+        // Sort: accounts that exist on the instance first
+        rows.sort((a, b) => {
+            if (a.existsOnInstance === b.existsOnInstance) return 0;
+            return a.existsOnInstance ? -1 : 1;
+        });
+
+        // Combine: bridged rows first, then already-followed rows
+        const allRows = [...rows, ...alreadyFollowedRows];
 
         const html = `
 <!DOCTYPE html>
@@ -162,22 +129,27 @@ function writeResultsToHtml() {
     a { color: #3182ce; text-decoration: none; }
     a:hover { text-decoration: underline; }
     .count { margin-bottom: 1em; color: #555; }
+    .status-green { color: #228B22; font-weight: bold; }
+    .status-orange { color: #FF8C00; font-weight: bold; }
+    .status-red { color: #C00; font-weight: bold; }
   </style>
 </head>
 <body>
   <h1>Fediverse Radar: Bluesky → Mastodon Results</h1>
-  <div class="count">${rows.length} account${rows.length === 1 ? '' : 's'} found</div>
+  <div class="count">${allRows.length} account${allRows.length === 1 ? '' : 's'} listed (${rows.length} newly bridged, ${alreadyFollowedRows.length} already followed)</div>
   <table>
     <tr>
       <th>Handle</th>
       <th>Link</th>
       <th>Status</th>
+      <th>Search Link</th>
     </tr>
-    ${rows.map(row => `
+    ${allRows.map(row => `
       <tr>
         <td>${row.handle}</td>
         <td><a href="${row.link}" target="_blank">${row.link}</a></td>
-        <td>${row.status}</td>
+        <td class="${row.statusClass || ''}">${row.status}</td>
+        <td>${row.searchLink ? `<a href="${row.searchLink}" target="_blank">Search link</a>` : ''}</td>
       </tr>
     `).join('')}
   </table>
@@ -186,7 +158,7 @@ function writeResultsToHtml() {
         `.trim();
 
         fs.writeFileSync('output.html', html, 'utf8');
-        console.log(chalk.green(`HTML report saved as output.html (${rows.length} entries).`));
+        console.log(chalk.green(`HTML report saved as output.html (${allRows.length} total entries: ${rows.length} newly bridged, ${alreadyFollowedRows.length} already followed).`));
     } catch (err) {
         console.error(chalk.red('Error writing output.html:'), err.message);
     }
@@ -248,205 +220,212 @@ function showBridgedPercentage(bskyHandlesPath, csvFilePath, mastoCsvPath = null
     }
 }
 
-// Main entry point for the conversion process
-async function main(args = process.argv.slice(2)) {
-    let directory = null;
-    let csvPath = null;
-    let testMode = false;
-    let testNum = 0;
-    let useExisting = false;
-
-    // Parse CLI arguments
-    for (let i = 0; i < args.length; i++) {
-        if (args[i] === '-c' && args[i + 1]) {
-            csvPath = args[i + 1];
-            i++;
-        } else if (args[i] === '-t' && args[i + 1]) {
-            testMode = true;
-            testNum = parseInt(args[i + 1], 10);
-            i++;
-        } else if (args[i] === '-e') {
-            useExisting = true;
-        } else if (!directory) {
-            directory = args[i];
+// Fetch followers of a BSKY account using the public API
+async function fetchFollowersHandles(actorHandleOrDid, maxEntries = null) {
+    let cursor = undefined;
+    let handles = [];
+    let totalFetched = 0;
+    while (true) {
+        const url = `https://public.api.bsky.app/xrpc/app.bsky.graph.getFollowers?actor=${encodeURIComponent(actorHandleOrDid)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}&limit=100`;
+        try {
+            const response = await axios.get(url);
+            if (response.data && Array.isArray(response.data.followers)) {
+                for (const follower of response.data.followers) {
+                    if (follower.handle) handles.push(follower.handle);
+                    totalFetched++;
+                    if (maxEntries && totalFetched >= maxEntries) break;
+                }
+                if (maxEntries && totalFetched >= maxEntries) break;
+                if (response.data.cursor) {
+                    cursor = response.data.cursor;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        } catch (err) {
+            console.error(chalk.red(`Error fetching followers for ${actorHandleOrDid}: ${err.message}`));
+            break;
         }
     }
+    return handles;
+}
 
-    if (!directory && !useExisting) {
-        console.error(chalk.red('Please provide the directory path as an argument or use the -e flag.'));
+// Fetch the list of accounts a user is following (their "follows") using the public API
+async function fetchUserFollowsHandles(userHandle, maxEntries = null) {
+    let cursor = undefined;
+    let handles = [];
+    let totalFetched = 0;
+    while (true) {
+        const url = `https://public.api.bsky.app/xrpc/app.bsky.graph.getFollows?actor=${encodeURIComponent(userHandle)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}&limit=100`;
+        try {
+            const response = await axios.get(url);
+            if (response.data && Array.isArray(response.data.follows)) {
+                for (const follow of response.data.follows) {
+                    if (follow.handle) handles.push(follow.handle);
+                    totalFetched++;
+                    if (maxEntries && totalFetched >= maxEntries) break;
+                }
+                if (maxEntries && totalFetched >= maxEntries) break;
+                if (response.data.cursor) {
+                    cursor = response.data.cursor;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        } catch (err) {
+            console.error(chalk.red(`Error fetching follows for ${userHandle}: ${err.message}`));
+            break;
+        }
+    }
+    return handles;
+}
+
+// Check if a profile exists on a given instance
+async function checkProfileExistsOnInstance(instance, address) {
+    try {
+        // Use the Mastodon API to check for account existence
+        const url = `https://${instance}/api/v1/accounts/lookup?acct=${encodeURIComponent(address)}`;
+        const response = await axios.get(url, { validateStatus: () => true });
+        return response.status === 200;
+    } catch (err) {
+        return false;
+    }
+}
+
+// Fetch accounts followed by the bridge account (ap.brid.gy)
+async function fetchBridgeFollowingHandles(bridgeHandle = 'ap.brid.gy') {
+    let cursor = undefined;
+    let handles = [];
+    let totalFetched = 0;
+
+    // Print the static status line (in blue)
+    process.stdout.write(chalk.cyan('Gathering bridge follows...\n'));
+    // Print the dynamic count line (start with 0, in blue)
+    process.stdout.write(chalk.cyan(`Bridge follows gathered: 0`));
+    let lastLength = `Bridge follows gathered: 0`.length;
+
+    while (true) {
+        const url = `https://public.api.bsky.app/xrpc/app.bsky.graph.getFollows?actor=${encodeURIComponent(bridgeHandle)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}&limit=100`;
+        try {
+            const response = await axios.get(url);
+            if (response.data && Array.isArray(response.data.follows)) {
+                for (const follow of response.data.follows) {
+                    handles.push(follow.handle);
+                    totalFetched++;
+                    // Overwrite the count line in blue
+                    const countStr = `Bridge follows gathered: ${totalFetched}`;
+                    process.stdout.write(`\r${chalk.cyan(countStr)}${' '.repeat(Math.max(0, lastLength - countStr.length))}`);
+                    lastLength = countStr.length;
+                }
+                if (response.data.cursor) {
+                    cursor = response.data.cursor;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        } catch (err) {
+            process.stdout.write('\n');
+            console.error(chalk.red(`Error fetching follows for ${bridgeHandle}: ${err.message}`));
+            break;
+        }
+    }
+    // When done, overwrite the count line in green and move to next line
+    const doneStr = `Bridge follows gathered: ${totalFetched}`;
+    process.stdout.write(`\r${chalk.green(doneStr)}${' '.repeat(Math.max(0, lastLength - doneStr.length))}\n`);
+    return new Set(handles.map(h => h.toLowerCase()));
+}
+
+async function main(args = process.argv.slice(2)) {
+    // Parse args, fetch follows, check bridge, write CSV/HTML, etc.
+    const handleOrDid = args[0];
+    if (!handleOrDid) {
+        console.error(chalk.red('No Bluesky handle or DID provided.'));
         process.exit(1);
     }
 
-    const mastodonInstanceInput = process.env.BSKY_CHECK_INSTANCE ||
-        readlineSync.question(
-            chalk.bold('Enter the Mastodon instance to CHECK (e.g., mastodon.social): ')
-        );
-    const outputInstance = process.env.BSKY_WRITE_INSTANCE ||
-        readlineSync.question(
-            chalk.bold('Enter the Mastodon instance to WRITE (e.g., vivaldi.social): ')
-        );
-
-    let handles = [];
-    if (useExisting) {
-        handles = readHandlesFromFile('BlueSkyHandles.txt');
-        if (handles.length === 0) {
-            console.error(chalk.red("No handles found in BlueSkyHandles.txt."));
-            return;
-        }
-    } else {
-        handles = await extractHandles(directory, mastodonInstanceInput, testMode ? testNum : null);
-        writeHandlesToFile(handles);
+    // Detect -c flag and get CSV path if present
+    let existingCsvPath = null;
+    const cIndex = args.indexOf('-c');
+    if (cIndex !== -1 && args[cIndex + 1]) {
+        existingCsvPath = args[cIndex + 1];
     }
 
-    let existingHandles = [];
-    if (csvPath) {
-        existingHandles = readExistingCSV(csvPath);
+    // Check for --instance argument
+    let outputInstance = null;
+    const instanceIndex = args.indexOf('--instance');
+    if (instanceIndex !== -1 && args[instanceIndex + 1]) {
+        outputInstance = args[instanceIndex + 1];
     }
 
-    // Filter out handles that already exist in the CSV file
-    const filteredHandles = handles.filter(handle => typeof handle === 'string' && !existingHandles.includes(handle.trim()));
+    // Prompt for Mastodon instance only if not provided
+    const defaultInstance = 'mastodon.social';
+    if (!outputInstance) {
+        outputInstance = readlineSync.question(
+            chalk.bold(`Enter your Mastodon instance for profile links [${defaultInstance}]: `)
+        ).trim() || defaultInstance;
+    }
 
-    const errors = [];
-    let instanceIndex = 0;
-    let checkCount = 0;
+    // Fetch follows using your API helper
+    process.stdout.write(chalk.cyan('Fetching your follows...'));
+    const handles = await fetchUserFollowsHandles(handleOrDid);
+    // Overwrite the previous line with the green completed status
+    process.stdout.write(`\r${chalk.green('Fetching your follows... Done!')}\n`);
 
-    // Initialize the CSV file
     initializeCSV();
+    const bridgeFollowingSet = await fetchBridgeFollowingHandles('ap.brid.gy');
 
-    // In your main loop, only write a row for handles that are found
-    for (let i = 0; i < filteredHandles.length; i++) {
-        let handle = filteredHandles[i].trim();
+    // Loading bar for checking handles
+    const total = handles.length;
+    let loadingBarComplete = false;
+    for (let i = 0; i < handles.length; i++) {
+        const handle = handles[i];
         const fullHandle = `@${handle}@bsky.brid.gy`;
+        const link = `https://${outputInstance}/@${handle}@bsky.brid.gy`;
+        const isBridged = bridgeFollowingSet.has(handle.toLowerCase());
+        const status = isBridged ? 'Bridged (via ap.brid.gy)' : 'Not bridged';
 
-        process.stdout.clearLine();
-        process.stdout.cursorTo(0);
-        process.stdout.write(chalk.cyan(`Checking handle ${i + 1}/${filteredHandles.length} (${handle})...`));
+        appendToCSV(fullHandle, link, status);
 
-        if (checkCount >= 299) {
-            instanceIndex++;
-            checkCount = 0;
-        }
-
-        // Check existence on the CHECK instance
-        const mastodonCheckResult = await checkMastodonAccount(handle, mastodonInstanceInput);
-        const mastodonExists = mastodonCheckResult.exists;
-        const mastodonInstanceChecked = mastodonCheckResult.instance;
-
-        if (mastodonCheckResult.rateLimited) {
-            instanceIndex++;
-            checkCount = 0;
-            i--;
-            continue;
-        }
-
-        let link = `https://${outputInstance}/@${handle}@bsky.brid.gy`;
-        let status = mastodonExists ? 'Found' : `Not found on ${mastodonInstanceChecked}`;
-        if (mastodonExists) {
-            appendToCSV(fullHandle, link, status);
-            process.stdout.clearLine();
-            process.stdout.cursorTo(0);
-            process.stdout.write(chalk.green(`Checking handle ${i + 1}/${filteredHandles.length} (${handle})... (Found on Mastodon)\r`));
+        // Loading bar only (no per-handle output)
+        const checked = i + 1;
+        const barLength = 40;
+        const percent = checked / total;
+        const filled = Math.round(barLength * percent);
+        const bar = chalk.green('█'.repeat(filled)) + chalk.gray('░'.repeat(barLength - filled));
+        const lineWidth = 60;
+        const handleLine = `Checked ${checked}/${total}`;
+        const paddedHandleLine = handleLine.padEnd(lineWidth, ' ');
+        // If complete, print in green and do not overwrite
+        if (checked === total) {
+            process.stdout.write(`\r${chalk.green(paddedHandleLine)}\n${chalk.green(`[${'█'.repeat(barLength)}] 100.0%`)}\n`);
+            loadingBarComplete = true;
         } else {
-            process.stdout.clearLine();
-            process.stdout.cursorTo(0);
-            process.stdout.write(chalk.yellow(`Checking handle ${i + 1}/${filteredHandles.length} (${handle})... (Not found on ${mastodonInstanceChecked})\r`));
+            process.stdout.write(`\r${chalk.cyan(paddedHandleLine)}\n[${bar}] ${(percent * 100).toFixed(1)}%`);
+            process.stdout.write('\x1b[1A');
         }
-
-        if (mastodonCheckResult.error) {
-            errors.push(`Handle: ${handle}, Error: ${mastodonCheckResult.error}`);
-        }
-
-        checkCount++;
     }
+    if (!loadingBarComplete) process.stdout.write('\n'); // Move to next line after loop if not already done
 
-    if (errors.length > 0) {
-        console.error(chalk.red('\nErrors encountered during fetching:'));
-        errors.forEach(error => console.error(chalk.red(error)));
-    }
+    // Pass the CSV path to the HTML writer!
+    await writeResultsToHtml(outputInstance, existingCsvPath);
+    console.log(chalk.green('\nDone!'));
 
-    // Write results to HTML at the end
-    writeResultsToHtml();
-
-    // Always prompt to open the HTML report
-    const wantOpenHtml = readlineSync.keyInYNStrict(
-        chalk.bold('\nDo you want to open the output.html report in your browser?')
-    );
-    if (wantOpenHtml) {
+    // Prompt to open the HTML file
+    const htmlPath = path.resolve('output.html');
+    if (readlineSync.keyInYNStrict(chalk.yellow('Open the HTML report (output.html) in your browser?'))) {
         try {
-            await open('output.html');
+            await open(htmlPath);
+            console.log(chalk.green('HTML report opened in your default browser.'));
         } catch (err) {
-            console.error(chalk.red('Could not open output.html in browser:'), err.message);
-        }
-    }
-
-    // Show percentage of bridged accounts
-    showBridgedPercentage('BlueSkyHandles.txt', csvFilePath, csvPath);
-
-    // After main loop, before writing results:
-    // Find unbridged handles
-    const allHandlesSet = new Set(
-        handles
-            .filter(h => typeof h === 'string')
-            .map(h => h.trim().toLowerCase())
-    );
-    const bridgedHandlesSet = new Set();
-    // Get bridged handles from output CSV
-    const csvContent = fs.readFileSync(csvFilePath, 'utf8');
-    csvContent
-        .trim()
-        .split('\n')
-        .slice(1)
-        .forEach(line => {
-            const match = line.match(/"@([^@]+)@bsky\.brid\.gy"/);
-            if (match) bridgedHandlesSet.add(match[1].toLowerCase());
-        });
-
-    // Also add already-followed bridged handles from masto CSV if present
-    if (csvPath) {
-        try {
-            const fileContent = fs.readFileSync(csvPath, 'utf8');
-            const records = parse(fileContent, {
-                columns: true,
-                skip_empty_lines: true
-            });
-            records.forEach(record => {
-                const address = record['Account address'];
-                if (address && address.endsWith('@bsky.brid.gy')) {
-                    const h = address.split('@')[0].replace(/^@/, '').toLowerCase();
-                    bridgedHandlesSet.add(h);
-                }
-            });
-        } catch (e) {
-            console.error(chalk.red('Error reading Mastodon CSV for already-followed accounts:'), e.message);
-        }
-    }
-
-    const unbridgedHandles = Array.from(allHandlesSet).filter(h => !bridgedHandlesSet.has(h));
-
-    if (unbridgedHandles.length > 0) {
-        const wantUnbridged = readlineSync.keyInYNStrict(
-            chalk.bold('\nDo you want to output a file of all accounts that are NOT bridged?')
-        );
-        if (wantUnbridged) {
-            const wantMsg = readlineSync.keyInYNStrict(
-                chalk.bold('Do you want to include a bridge request message for each account?')
-            );
-            // Prepare output
-            let output = 'Handle,BlueSky Link' + (wantMsg ? ',Bridge Request Message' : '') + '\n';
-            unbridgedHandles.forEach(handle => {
-                const bskyLink = `https://bsky.app/profile/${handle}`;
-                const msg = wantMsg ? `"@bsky.brid.gy@bsky.brid.gy ${handle}"` : '';
-                output += `${handle},${bskyLink}${wantMsg ? ',' + msg : ''}\n`;
-            });
-            const outFile = 'UnbridgedAccounts.csv';
-            fs.writeFileSync(outFile, output, 'utf8');
-            console.log(chalk.yellow(`\nUnbridged account list saved as ${outFile} (${unbridgedHandles.length} entries).`));
+            console.warn(chalk.red('Could not open output.html:'), err.message);
         }
     }
 }
 
 module.exports = main;
-
-if (require.main === module) {
-    main();
-}
