@@ -420,6 +420,51 @@ async function checkProfileExistsOnInstance(instance, address) {
     }
 }
 
+// Fetch accounts followed by the bridge account (ap.brid.gy)
+async function fetchBridgeFollowingHandles(bridgeHandle = 'ap.brid.gy') {
+    let cursor = undefined;
+    let handles = [];
+    let totalFetched = 0;
+
+    // Print the static status line (in blue)
+    process.stdout.write(chalk.cyan('Gathering bridge follows...\n'));
+    // Print the dynamic count line (start with 0, in blue)
+    process.stdout.write(chalk.cyan(`Bridge follows gathered: 0`));
+    let lastLength = `Bridge follows gathered: 0`.length;
+
+    while (true) {
+        const url = `https://public.api.bsky.app/xrpc/app.bsky.graph.getFollows?actor=${encodeURIComponent(bridgeHandle)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}&limit=100`;
+        try {
+            const response = await axios.get(url);
+            if (response.data && Array.isArray(response.data.follows)) {
+                for (const follow of response.data.follows) {
+                    handles.push(follow.handle);
+                    totalFetched++;
+                    // Overwrite the count line in blue
+                    const countStr = `Bridge follows gathered: ${totalFetched}`;
+                    process.stdout.write(`\r${chalk.cyan(countStr)}${' '.repeat(Math.max(0, lastLength - countStr.length))}`);
+                    lastLength = countStr.length;
+                }
+                if (response.data.cursor) {
+                    cursor = response.data.cursor;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        } catch (err) {
+            process.stdout.write('\n');
+            console.error(chalk.red(`Error fetching follows for ${bridgeHandle}: ${err.message}`));
+            break;
+        }
+    }
+    // When done, overwrite the count line in green and move to next line
+    const doneStr = `Bridge follows gathered: ${totalFetched}`;
+    process.stdout.write(`\r${chalk.green(doneStr)}${' '.repeat(Math.max(0, lastLength - doneStr.length))}\n`);
+    return new Set(handles.map(h => h.toLowerCase()));
+}
+
 async function main(args = process.argv.slice(2)) {
     // Parse args, fetch follows, check bridge, write CSV/HTML, etc.
     const handleOrDid = args[0];
@@ -451,36 +496,45 @@ async function main(args = process.argv.slice(2)) {
     }
 
     // Fetch follows using your API helper
+    process.stdout.write(chalk.cyan('Fetching your follows...'));
     const handles = await fetchUserFollowsHandles(handleOrDid);
-
-    writeHandlesToFile(handles);
+    // Overwrite the previous line with the green completed status
+    process.stdout.write(`\r${chalk.green('Fetching your follows... Done!')}\n`);
 
     initializeCSV();
+    const bridgeFollowingSet = await fetchBridgeFollowingHandles('ap.brid.gy');
+
+    // Loading bar for checking handles
+    const total = handles.length;
+    let loadingBarComplete = false;
     for (let i = 0; i < handles.length; i++) {
         const handle = handles[i];
         const fullHandle = `@${handle}@bsky.brid.gy`;
         const link = `https://${outputInstance}/@${handle}@bsky.brid.gy`;
-        const status = (await isHandleBridged(handle)) ? 'Bridged (via fed.brid.gy)' : 'Not bridged';
+        const isBridged = bridgeFollowingSet.has(handle.toLowerCase());
+        const status = isBridged ? 'Bridged (via ap.brid.gy)' : 'Not bridged';
+
         appendToCSV(fullHandle, link, status);
 
-        // Progress bar
-        const total = handles.length;
+        // Loading bar only (no per-handle output)
         const checked = i + 1;
         const barLength = 40;
         const percent = checked / total;
         const filled = Math.round(barLength * percent);
         const bar = chalk.green('█'.repeat(filled)) + chalk.gray('░'.repeat(barLength - filled));
-
-        // Pad the handle line to a fixed width to clear leftovers
         const lineWidth = 60;
-        const handleLine = `Checked ${checked}/${total} - ${handle}`;
+        const handleLine = `Checked ${checked}/${total}`;
         const paddedHandleLine = handleLine.padEnd(lineWidth, ' ');
-
-        process.stdout.write(`\r${paddedHandleLine}\n[${bar}] ${(percent * 100).toFixed(1)}%`);
-        // Move cursor up one line so next update overwrites both lines
-        process.stdout.write('\x1b[1A');
+        // If complete, print in green and do not overwrite
+        if (checked === total) {
+            process.stdout.write(`\r${chalk.green(paddedHandleLine)}\n${chalk.green(`[${'█'.repeat(barLength)}] 100.0%`)}\n`);
+            loadingBarComplete = true;
+        } else {
+            process.stdout.write(`\r${chalk.cyan(paddedHandleLine)}\n[${bar}] ${(percent * 100).toFixed(1)}%`);
+            process.stdout.write('\x1b[1A');
+        }
     }
-    process.stdout.write('\n'); // Move to next line after loop
+    if (!loadingBarComplete) process.stdout.write('\n'); // Move to next line after loop if not already done
 
     // Pass the CSV path to the HTML writer!
     await writeResultsToHtml(outputInstance, existingCsvPath);
