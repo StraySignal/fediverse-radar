@@ -144,21 +144,55 @@ function initializeCSV() {
 }
 
 // Write results to a styled HTML file
-function writeResultsToHtml(outputInstance = 'mastodon.social') {
+function writeResultsToHtml(outputInstance = 'mastodon.social', existingCsvPath = null) {
+    // Read already-followed handles from the existing CSV, if provided
+    let alreadyFollowedHandles = new Set();
+    if (existingCsvPath && fs.existsSync(existingCsvPath)) {
+        try {
+            const fileContent = fs.readFileSync(existingCsvPath, 'utf8');
+            const records = parse(fileContent, {
+                columns: true,
+                skip_empty_lines: true
+            });
+            alreadyFollowedHandles = new Set(
+                records
+                    .map(record => {
+                        const address = record['Account address'];
+                        // Only count bsky.brid.gy accounts
+                        if (address && address.endsWith('@bsky.brid.gy')) {
+                            // Add both with and without leading @ for robust comparison
+                            return [address.toLowerCase(), `@${address.toLowerCase()}`];
+                        }
+                        return [];
+                    })
+                    .flat()
+                    .filter(Boolean)
+            );
+        } catch (e) {
+            console.error(chalk.red('Error reading Mastodon CSV for already-followed accounts:'), e.message);
+        }
+    }
+
     try {
         const fileContent = fs.readFileSync(csvFilePath, 'utf8');
         const lines = fileContent.trim().split('\n');
+        // Only include rows where status starts with "Bridged" AND not in already-followed
         const rows = lines.slice(1).map(line => {
             const match = line.match(/"([^"]*)","([^"]*)","([^"]*)"/);
             if (match) {
                 const [, handle, , status] = match;
-                // Rebuild the link with the chosen instance
-                const username = handle.replace(/^@/, '').replace(/@bsky\.brid\.gy$/, '');
-                const link = `https://${outputInstance}/@${username}@bsky.brid.gy`;
-                return { handle, link, status };
+                const address = handle.replace(/^@/, ''); // e.g. monstercollie.bsky.social@bsky.brid.gy
+                const link = `https://${outputInstance}/@${address}`;
+                return { handle, address, link, status };
             }
             return null;
-        }).filter(Boolean);
+        }).filter(row =>
+            row &&
+            row.status &&
+            row.status.toLowerCase().startsWith('bridged') &&
+            !alreadyFollowedHandles.has(row.address.toLowerCase()) &&
+            !alreadyFollowedHandles.has(row.handle.toLowerCase())
+        );
 
         const html = `
 <!DOCTYPE html>
@@ -180,7 +214,7 @@ function writeResultsToHtml(outputInstance = 'mastodon.social') {
 </head>
 <body>
   <h1>Fediverse Radar: Bluesky → Mastodon Results</h1>
-  <div class="count">${rows.length} account${rows.length === 1 ? '' : 's'} found</div>
+  <div class="count">${rows.length} bridged account${rows.length === 1 ? '' : 's'} found</div>
   <table>
     <tr>
       <th>Handle</th>
@@ -200,7 +234,7 @@ function writeResultsToHtml(outputInstance = 'mastodon.social') {
         `.trim();
 
         fs.writeFileSync('output.html', html, 'utf8');
-        console.log(chalk.green(`HTML report saved as output.html (${rows.length} entries).`));
+        console.log(chalk.green(`HTML report saved as output.html (${rows.length} bridged entries not already followed).`));
     } catch (err) {
         console.error(chalk.red('Error writing output.html:'), err.message);
     }
@@ -334,11 +368,27 @@ async function main(args = process.argv.slice(2)) {
         process.exit(1);
     }
 
-    // Prompt for Mastodon instance
+    // Detect -c flag and get CSV path if present
+    let existingCsvPath = null;
+    const cIndex = args.indexOf('-c');
+    if (cIndex !== -1 && args[cIndex + 1]) {
+        existingCsvPath = args[cIndex + 1];
+    }
+
+    // Check for --instance argument
+    let outputInstance = null;
+    const instanceIndex = args.indexOf('--instance');
+    if (instanceIndex !== -1 && args[instanceIndex + 1]) {
+        outputInstance = args[instanceIndex + 1];
+    }
+
+    // Prompt for Mastodon instance only if not provided
     const defaultInstance = 'mastodon.social';
-    const outputInstance = readlineSync.question(
-        chalk.bold(`Enter your Mastodon instance for profile links [${defaultInstance}]: `)
-    ).trim() || defaultInstance;
+    if (!outputInstance) {
+        outputInstance = readlineSync.question(
+            chalk.bold(`Enter your Mastodon instance for profile links [${defaultInstance}]: `)
+        ).trim() || defaultInstance;
+    }
 
     // Fetch follows using your API helper
     const handles = await fetchUserFollowsHandles(handleOrDid);
@@ -352,11 +402,28 @@ async function main(args = process.argv.slice(2)) {
         const link = `https://${outputInstance}/@${handle}@bsky.brid.gy`;
         const status = (await isHandleBridged(handle)) ? 'Bridged (via fed.brid.gy)' : 'Not bridged';
         appendToCSV(fullHandle, link, status);
-        process.stdout.write(chalk.cyan(`Checked ${i + 1}/${handles.length} (${handle})... (${status})\r`));
-    }
 
-    // Update HTML writer to use the chosen instance for links
-    writeResultsToHtml(outputInstance);
+        // Progress bar
+        const total = handles.length;
+        const checked = i + 1;
+        const barLength = 40;
+        const percent = checked / total;
+        const filled = Math.round(barLength * percent);
+        const bar = chalk.green('█'.repeat(filled)) + chalk.gray('░'.repeat(barLength - filled));
+
+        // Pad the handle line to a fixed width to clear leftovers
+        const lineWidth = 60;
+        const handleLine = `Checked ${checked}/${total} - ${handle}`;
+        const paddedHandleLine = handleLine.padEnd(lineWidth, ' ');
+
+        process.stdout.write(`\r${paddedHandleLine}\n[${bar}] ${(percent * 100).toFixed(1)}%`);
+        // Move cursor up one line so next update overwrites both lines
+        process.stdout.write('\x1b[1A');
+    }
+    process.stdout.write('\n'); // Move to next line after loop
+
+    // Pass the CSV path to the HTML writer!
+    writeResultsToHtml(outputInstance, existingCsvPath);
     console.log(chalk.green('\nDone!'));
 }
 

@@ -74,6 +74,9 @@ if (process.argv.includes('-f2')) {
     if (config.FILE_PATH) {
         args.push('-c', config.FILE_PATH);
     }
+    if (config.WRITE_INSTANCE) {
+        args.push('--instance', config.WRITE_INSTANCE);
+    }
     process.env.BSKY_CHECK_INSTANCE = config.CHECK_INSTANCE;
     process.env.BSKY_WRITE_INSTANCE = config.WRITE_INSTANCE;
     const bskyToMasto = require('./bskyToMasto.js');
