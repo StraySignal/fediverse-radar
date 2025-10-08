@@ -7,6 +7,8 @@ const _open = require('open');
 const chalk = require('chalk').default;
 const open = _open.default || _open;
 
+const csvFilePath = 'AccountHandles.csv'; // <-- Add this line
+
 // Append a single record to the CSV file (add a status column)
 function appendToCSV(handle, link, status = '') {
     const row = `"${handle}","${link}","${status}"\n`;
