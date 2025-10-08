@@ -180,7 +180,7 @@ async function writeResultsToHtml(outputInstance = 'mastodon.social', existingCs
                         handle,
                         address,
                         link,
-                        status: 'Already followed',
+                        status: 'Bridged, already followed',
                         statusClass: 'status-red',
                         searchLink: ''
                     };
@@ -220,7 +220,7 @@ async function writeResultsToHtml(outputInstance = 'mastodon.social', existingCs
                 row.existsOnInstance = true;
                 row.searchLink = '';
             } else {
-                row.status = `Bridged, but does not exist on the instance`;
+                row.status = `Bridged, doesn't exist on instance`;
                 row.statusClass = 'status-orange';
                 row.existsOnInstance = false;
                 const encoded = encodeURIComponent(`@${row.address}`);

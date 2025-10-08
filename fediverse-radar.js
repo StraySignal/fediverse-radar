@@ -133,6 +133,22 @@ if (process.argv.includes('-f1')) {
         const mastoToBsky = require('./mastoToBsky.js');
         await mastoToBsky(args);
 
+        const htmlPath = path.resolve('output.html');
+        // Always prompt to open the HTML report
+        if (readlineSync.keyInYNStrict(chalk.yellow('Open the HTML report (output.html) in your browser?'))) {
+            try {
+                if (process.platform === 'win32') {
+                    require('child_process').spawn('cmd', ['/c', 'start', '', htmlPath], { shell: true, stdio: 'ignore', detached: true });
+                    console.log(chalk.green('Open command issued using Windows cmd start.'));
+                } else {
+                    await open(htmlPath);
+                    console.log(chalk.green('Open command issued using open package.'));
+                }
+            } catch (err) {
+                console.warn(chalk.red('Could not open output.html:'), err.message);
+            }
+        }
+
         if (readlineSync.keyInYNStrict(chalk.yellow('\nWould you like to clean up generated files?'))) {
             cleanupGeneratedFiles();
             console.log(chalk.green('Cleanup complete.'));
@@ -160,24 +176,23 @@ async function mainMenu() {
         case 0: { // Mastodon to Bluesky conversion
             let inputCsv = readlineSync.question(chalk.bold('Enter the path to the Mastodon CSV file: '));
             inputCsv = inputCsv.trim().replace(/^['"]+|['"]+$/g, '');
-            const check = readlineSync.keyInYNStrict(chalk.yellow('Check account existence?'));
-            let followCheckArgs = [];
-            if (readlineSync.keyInYNStrict(chalk.yellow('Omit accounts you already follow on Bluesky?'))) {
-                const bskyHandleOrDid = readlineSync.question(chalk.bold('Enter your Bluesky handle or DID: '));
-                followCheckArgs = ['-f', bskyHandleOrDid];
-            }
+            // Always check account existence and always ask for BSKY handle
+            const bskyHandleOrDid = readlineSync.question(chalk.bold('Enter your Bluesky handle or DID: '));
+            const followCheckArgs = ['-f', bskyHandleOrDid];
             console.log(chalk.cyan('Running mastoToBsky...'));
             const mastoToBsky = require('./mastoToBsky.js');
-            await mastoToBsky([inputCsv, ...(check ? ['-c'] : []), ...followCheckArgs]);
+            await mastoToBsky([inputCsv, '-c', ...followCheckArgs]);
             const htmlPath = path.resolve('output.html');
-            if (process.platform === 'win32') {
-                console.log(chalk.yellow('\nTo view the HTML report, open the following file in your browser:'));
-                console.log(chalk.cyan.bold(htmlPath));
-                console.log(chalk.gray('Tip: You can run ') + chalk.whiteBright('start output.html') + chalk.gray(' in your terminal.'));
-            } else if (readlineSync.keyInYNStrict(chalk.yellow('Open the HTML report (output.html) in your browser?'))) {
+            // Always prompt to open the HTML report
+            if (readlineSync.keyInYNStrict(chalk.yellow('Open the HTML report (output.html) in your browser?'))) {
                 try {
-                    await open(htmlPath);
-                    console.log(chalk.green('Open command issued using open package.'));
+                    if (process.platform === 'win32') {
+                        require('child_process').spawn('cmd', ['/c', 'start', '', htmlPath], { shell: true, stdio: 'ignore', detached: true });
+                        console.log(chalk.green('Open command issued using Windows cmd start.'));
+                    } else {
+                        await open(htmlPath);
+                        console.log(chalk.green('Open command issued using open package.'));
+                    }
                 } catch (err) {
                     console.warn(chalk.red('Could not open output.html:'), err.message);
                 }
