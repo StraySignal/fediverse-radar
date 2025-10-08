@@ -144,9 +144,10 @@ function initializeCSV() {
 }
 
 // Write results to a styled HTML file
-function writeResultsToHtml(outputInstance = 'mastodon.social', existingCsvPath = null) {
+async function writeResultsToHtml(outputInstance = 'mastodon.social', existingCsvPath = null) {
     // Read already-followed handles from the existing CSV, if provided
     let alreadyFollowedHandles = new Set();
+    let alreadyFollowedRows = [];
     if (existingCsvPath && fs.existsSync(existingCsvPath)) {
         try {
             const fileContent = fs.readFileSync(existingCsvPath, 'utf8');
@@ -168,6 +169,22 @@ function writeResultsToHtml(outputInstance = 'mastodon.social', existingCsvPath 
                     .flat()
                     .filter(Boolean)
             );
+            // Prepare already-followed rows for the HTML
+            alreadyFollowedRows = records
+                .filter(record => record['Account address'] && record['Account address'].endsWith('@bsky.brid.gy'))
+                .map(record => {
+                    const address = record['Account address'];
+                    const handle = `@${address}`;
+                    const link = `https://${outputInstance}/@${address}`;
+                    return {
+                        handle,
+                        address,
+                        link,
+                        status: 'Already followed',
+                        statusClass: 'status-red',
+                        searchLink: ''
+                    };
+                });
         } catch (e) {
             console.error(chalk.red('Error reading Mastodon CSV for already-followed accounts:'), e.message);
         }
@@ -177,7 +194,7 @@ function writeResultsToHtml(outputInstance = 'mastodon.social', existingCsvPath 
         const fileContent = fs.readFileSync(csvFilePath, 'utf8');
         const lines = fileContent.trim().split('\n');
         // Only include rows where status starts with "Bridged" AND not in already-followed
-        const rows = lines.slice(1).map(line => {
+        let rows = lines.slice(1).map(line => {
             const match = line.match(/"([^"]*)","([^"]*)","([^"]*)"/);
             if (match) {
                 const [, handle, , status] = match;
@@ -193,6 +210,32 @@ function writeResultsToHtml(outputInstance = 'mastodon.social', existingCsvPath 
             !alreadyFollowedHandles.has(row.address.toLowerCase()) &&
             !alreadyFollowedHandles.has(row.handle.toLowerCase())
         );
+
+        // Check if the profile exists on the instance for each row
+        for (let row of rows) {
+            const exists = await checkProfileExistsOnInstance(outputInstance, row.address);
+            if (exists) {
+                row.status = `Bridged, exists on instance`;
+                row.statusClass = 'status-green';
+                row.existsOnInstance = true;
+                row.searchLink = '';
+            } else {
+                row.status = `Bridged, but does not exist on the instance`;
+                row.statusClass = 'status-orange';
+                row.existsOnInstance = false;
+                const encoded = encodeURIComponent(`@${row.address}`);
+                row.searchLink = `https://${outputInstance}/search?q=${encoded}`;
+            }
+        }
+
+        // Sort: accounts that exist on the instance first
+        rows.sort((a, b) => {
+            if (a.existsOnInstance === b.existsOnInstance) return 0;
+            return a.existsOnInstance ? -1 : 1;
+        });
+
+        // Combine: bridged rows first, then already-followed rows
+        const allRows = [...rows, ...alreadyFollowedRows];
 
         const html = `
 <!DOCTYPE html>
@@ -210,22 +253,27 @@ function writeResultsToHtml(outputInstance = 'mastodon.social', existingCsvPath 
     a { color: #3182ce; text-decoration: none; }
     a:hover { text-decoration: underline; }
     .count { margin-bottom: 1em; color: #555; }
+    .status-green { color: #228B22; font-weight: bold; }
+    .status-orange { color: #FF8C00; font-weight: bold; }
+    .status-red { color: #C00; font-weight: bold; }
   </style>
 </head>
 <body>
   <h1>Fediverse Radar: Bluesky → Mastodon Results</h1>
-  <div class="count">${rows.length} bridged account${rows.length === 1 ? '' : 's'} found</div>
+  <div class="count">${allRows.length} account${allRows.length === 1 ? '' : 's'} listed (${rows.length} newly bridged, ${alreadyFollowedRows.length} already followed)</div>
   <table>
     <tr>
       <th>Handle</th>
       <th>Link</th>
       <th>Status</th>
+      <th>Search Link</th>
     </tr>
-    ${rows.map(row => `
+    ${allRows.map(row => `
       <tr>
         <td>${row.handle}</td>
         <td><a href="${row.link}" target="_blank">${row.link}</a></td>
-        <td>${row.status}</td>
+        <td class="${row.statusClass || ''}">${row.status}</td>
+        <td>${row.searchLink ? `<a href="${row.searchLink}" target="_blank">Search link</a>` : ''}</td>
       </tr>
     `).join('')}
   </table>
@@ -234,7 +282,7 @@ function writeResultsToHtml(outputInstance = 'mastodon.social', existingCsvPath 
         `.trim();
 
         fs.writeFileSync('output.html', html, 'utf8');
-        console.log(chalk.green(`HTML report saved as output.html (${rows.length} bridged entries not already followed).`));
+        console.log(chalk.green(`HTML report saved as output.html (${allRows.length} total entries: ${rows.length} newly bridged, ${alreadyFollowedRows.length} already followed).`));
     } catch (err) {
         console.error(chalk.red('Error writing output.html:'), err.message);
     }
@@ -360,6 +408,18 @@ async function fetchUserFollowsHandles(userHandle, maxEntries = null) {
     return handles;
 }
 
+// Check if a profile exists on a given instance
+async function checkProfileExistsOnInstance(instance, address) {
+    try {
+        // Use the Mastodon API to check for account existence
+        const url = `https://${instance}/api/v1/accounts/lookup?acct=${encodeURIComponent(address)}`;
+        const response = await axios.get(url, { validateStatus: () => true });
+        return response.status === 200;
+    } catch (err) {
+        return false;
+    }
+}
+
 async function main(args = process.argv.slice(2)) {
     // Parse args, fetch follows, check bridge, write CSV/HTML, etc.
     const handleOrDid = args[0];
@@ -423,8 +483,19 @@ async function main(args = process.argv.slice(2)) {
     process.stdout.write('\n'); // Move to next line after loop
 
     // Pass the CSV path to the HTML writer!
-    writeResultsToHtml(outputInstance, existingCsvPath);
+    await writeResultsToHtml(outputInstance, existingCsvPath);
     console.log(chalk.green('\nDone!'));
+
+    // Prompt to open the HTML file
+    const htmlPath = path.resolve('output.html');
+    if (readlineSync.keyInYNStrict(chalk.yellow('Open the HTML report (output.html) in your browser?'))) {
+        try {
+            await open(htmlPath);
+            console.log(chalk.green('HTML report opened in your default browser.'));
+        } catch (err) {
+            console.warn(chalk.red('Could not open output.html:'), err.message);
+        }
+    }
 }
 
 module.exports = main;
