@@ -2,13 +2,10 @@ const fs = require('fs');
 const csv = require('csv-parser');
 const { write } = require('fast-csv');
 const axios = require('axios');
-const { promisify } = require('util');
 const path = require('path');
 const _open = require('open');
 const chalk = require('chalk').default;
 const open = _open.default || _open;
-
-const sleep = promisify(setTimeout);
 
 // Convert a Mastodon account address to the Bluesky brid.gy format
 function convertAddressFormat(address) {
@@ -33,111 +30,6 @@ async function checkAccountExists(accountAddress) {
   } catch (error) {
     return { exists: false, address: formattedAddress, error: error.message };
   }
-}
-
-// Ensure the atproto-export repo is present and dependencies are installed
-async function ensureAtprotoExportRepo() {
-  const repoDir = path.resolve(__dirname, 'atproto-export');
-  if (!fs.existsSync(repoDir)) {
-    console.log(chalk.yellow('Cloning atproto-export repository...'));
-    await new Promise((resolve, reject) => {
-      const git = require('child_process').spawn('git', ['clone', 'https://github.com/rdp-studio/atproto-export.git'], { stdio: 'inherit' });
-      git.on('close', code => code === 0 ? resolve() : reject(new Error('git clone failed')));
-      git.on('error', err => reject(err));
-    });
-  }
-  const nodeModulesDir = path.join(repoDir, 'node_modules');
-  if (!fs.existsSync(nodeModulesDir)) {
-    console.log(chalk.yellow('Installing dependencies for atproto-export...'));
-    await new Promise((resolve, reject) => {
-      const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-      const npm = require('child_process').spawn(npmCmd, ['install'], { cwd: repoDir, stdio: 'inherit', shell: process.platform === 'win32' });
-      npm.on('close', code => code === 0 ? resolve() : reject(new Error('npm install failed')));
-      npm.on('error', err => reject(err));
-    });
-  }
-  return repoDir;
-}
-
-// Run the atproto-export script for a given handle or DID
-async function runAtprotoExport(handleOrDid) {
-  const repoDir = await ensureAtprotoExportRepo();
-  const exportScript = path.join(repoDir, 'bin', 'export.js');
-  const outDir = path.join(repoDir, '..', 'atproto-export', handleOrDid);
-  if (!fs.existsSync(exportScript)) {
-    throw new Error(chalk.red('Could not find atproto-export export.js script.'));
-  }
-  if (!fs.existsSync(outDir)) {
-    await new Promise((resolve, reject) => {
-      const proc = require('child_process').spawn('node', [exportScript, '--no-blobs', '-o', outDir, handleOrDid], { stdio: 'inherit', cwd: repoDir });
-      proc.on('close', code => code === 0 ? resolve() : reject(new Error('Export process failed')));
-      proc.on('error', err => reject(err));
-    });
-  }
-  // Find did-* subdirectory
-  const subdirs = fs.readdirSync(outDir, { withFileTypes: true });
-  let didDir = null;
-  for (const sub of subdirs) {
-    if (sub.isDirectory() && sub.name.startsWith('did-')) {
-      didDir = path.join(outDir, sub.name);
-      break;
-    }
-  }
-  if (!didDir) throw new Error(chalk.red('Could not find DID directory after export.'));
-  const followDir = path.join(didDir, 'app.bsky.graph.follow');
-  if (!fs.existsSync(followDir)) throw new Error(chalk.red('Could not find app.bsky.graph.follow directory in export.'));
-  return followDir;
-}
-
-// Parse exported follows to get a Set of followed DIDs
-function getFollowedDids(followDir) {
-  const files = fs.readdirSync(followDir);
-  const dids = new Set();
-  for (const file of files) {
-    const json = JSON.parse(fs.readFileSync(path.join(followDir, file)));
-    if (json.subject) dids.add(json.subject);
-  }
-  return dids;
-}
-
-// Resolve a handle to a DID using the Bluesky API
-async function resolveHandleToDid(handle) {
-  try {
-    const response = await axios.get(`https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${handle}`);
-    if (response.data && response.data.did) return response.data.did;
-  } catch (e) {}
-  return null;
-}
-
-// Given a set of followed DIDs, resolve their handles and brid.gy aliases
-async function getFollowedHandlesFromDids(didSet) {
-  const handles = new Set();
-  let count = 0;
-  const total = didSet.size;
-  const spinnerFrames = ['|', '/', '-', '\\'];
-  let spinnerIndex = 0;
-  process.stdout.write(chalk.cyan(`Resolving handles: 0/${total} `));
-  for (const did of didSet) {
-    try {
-      const resp = await axios.get(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${did}`);
-      if (resp.data && resp.data.handle) {
-        handles.add(resp.data.handle.toLowerCase());
-        // Add brid.gy alias for Mastodon-to-Bluesky mapping
-        const bridgy = resp.data.handle.replace('@', '.').replace(/\./g, '-') + '.ap.brid.gy';
-        handles.add(bridgy.toLowerCase());
-      }
-    } catch (e) {
-      // Ignore errors
-    }
-    count++;
-    spinnerIndex = (spinnerIndex + 1) % spinnerFrames.length;
-    process.stdout.write(
-      `\r${chalk.cyan(`Resolving handles: ${count}/${total} ${spinnerFrames[spinnerIndex]}`)}`
-    );
-    await sleep(50); // Avoid rate limits
-  }
-  process.stdout.write('\n');
-  return handles;
 }
 
 // Fetch the list of accounts a user is following (their "follows") using the public API

@@ -23,8 +23,7 @@ You will be presented with an interactive, colorized menu to:
 
 - Convert Mastodon CSV to Bluesky (Mastodon to Bluesky)
 - Convert Bluesky follows to Mastodon handles (Bluesky to Mastodon)
-- Export atproto data
-- Exit
+- Exit/Cleanup
 
 ---
 
@@ -33,29 +32,25 @@ You will be presented with an interactive, colorized menu to:
 ### Convert Mastodon CSV to Bluesky
 
 - Takes your Mastodon following accounts CSV export and checks for corresponding bridged Bluesky accounts using [Bridgy Fed](https://fed.brid.gy/).
-- Checks if each converted Bluesky account actually exists and is reachable.
-- Optionally, omits accounts you already follow on Bluesky by exporting your follows using [atproto-export](https://github.com/rdp-studio/atproto-export) (handled automatically).
-- Only accounts that are confirmed to exist, are accessible, and are not already followed will be included in the output.
+- Checks if each converted Bluesky account actually exists and is reachable (this is always performed).
+- **Always omits accounts you already follow on Bluesky** by fetching your follows directly from the Bluesky API.
 - Results are saved as `output.csv` and a styled `output.html` in your project directory.
-- After conversion, you will be prompted to open the HTML report in your default browser (cross-platform, **see Windows note below**).
+- The HTML report lists all bridged accounts, with "Bridged, not yet followed" accounts shown first, followed by "Bridged, already followed" accounts.
+- After conversion, you will always be prompted to open the HTML report in your default browser (cross-platform, **see Windows note below**).
 
 ### Convert Bluesky follows to Mastodon handles
 
-- Exports your Bluesky follows using [atproto-export](https://github.com/rdp-studio/atproto-export) (automatically handled by the CLI).
+- Exports your Bluesky follows using the Bluesky public API.
 - Checks Mastodon for bridged Bluesky accounts.
-- **You can now specify separate Mastodon instances for checking account existence and for writing output links.**
+- You can specify a Mastodon instance for output links.
 - Supports filtering, test mode, and using existing handle files.
 - Results are saved as `AccountHandles.csv` and a styled `output.html`.
-- After conversion, you will be prompted to open the HTML report in your default browser (cross-platform, **see Windows note below**).
-- **At the end of the run, you will see a summary of what percentage of your Bluesky follows are available to your Mastodon account, including already-followed bridged accounts if you provide a Mastodon CSV.**
-- **You will be prompted to optionally output a file of all unbridged accounts, and can also generate a preformatted bridge request message for each.**  
+- The HTML report lists all bridged accounts, with newly bridged accounts shown first, followed by already-followed accounts.
+- After conversion, you will always be prompted to open the HTML report in your default browser (cross-platform, **see Windows note below**).
+- At the end of the run, you will see a summary of what percentage of your Bluesky follows are available to your Mastodon account, including already-followed bridged accounts if you provide a Mastodon CSV.
+- You will be prompted to optionally output a file of all unbridged accounts, and can also generate a preformatted bridge request message for each.  
   - The output file (`UnbridgedAccounts.csv`) will include the handle, a link to the Bluesky profile, and (optionally) a message in the format:  
     `@bsky.brid.gy@bsky.brid.gy <bsky account handle>`
-
-### Export atproto data
-
-- Exports your Bluesky account data using [atproto-export](https://github.com/rdp-studio/atproto-export).
-- The CLI will prompt for your handle or DID and manage the export process for you.
 
 ---
 
@@ -87,6 +82,8 @@ node fediverse-radar.js -f1 handle.config
 
 - Parses the config file and shows a summary of the values.
 - Converts your Mastodon follows to Bluesky, using the specified options.
+- Always checks account existence and omits already-followed accounts.
+- After conversion, you will always be prompted to open the HTML report.
 - Runs non-interactively.
 
 ### Bluesky to Mastodon (use `-f2`)
@@ -98,6 +95,7 @@ node fediverse-radar.js -f2 handle.config
 - Parses the config file and shows a summary of the values.
 - Exports your Bluesky follows and checks for bridged Mastodon accounts, using the specified options.
 - If `FILE_PATH` is provided, already-followed bridged accounts are included in stats and filtering.
+- After conversion, you will always be prompted to open the HTML report.
 - Runs non-interactively.
 
 ---
@@ -133,7 +131,7 @@ All functionality is available through the interactive CLI (`fediverse-radar.js`
 
 - The CLI and HTML report opening work on Windows, macOS, and Linux.
 - The tool uses the [`open`](https://www.npmjs.com/package/open) package to open HTML reports in your default browser, automatically using the correct command for your OS.
-- **⚠️ On Windows, automatic opening of the HTML report is currently unreliable.**  
+- **⚠️ If you're using Arc Browser on Windows, automatic opening of the HTML report is currently unreliable.**  
   You will be shown the path to the HTML file and a tip to run `start output.html` in your terminal to open it manually.
 
 ---
@@ -147,7 +145,6 @@ All functionality is available through the interactive CLI (`fediverse-radar.js`
 ## Credits
 
 - [Bridgy Fed](https://fed.brid.gy/)
-- [atproto-export](https://github.com/rdp-studio/atproto-export)
 
 ---
 
@@ -172,9 +169,7 @@ All dependencies are cross-platform and chosen for reliability and ease of use i
 ## Additional Requirements
 
 - **Node.js** must be installed on your system.
-- **Git** is required for cloning the [atproto-export](https://github.com/rdp-studio/atproto-export) repository (handled automatically).
 - **Internet connection** is required for API lookups and downloading dependencies.
-- The CLI will automatically clone and manage the `atproto-export` tool as needed.
 
 ---
 
