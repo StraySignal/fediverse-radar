@@ -21,6 +21,19 @@ function initializeCSV() {
     fs.writeFileSync(csvFilePath, headers, 'utf8');
 }
 
+// Add this helper function to check if the account is actually bridging
+async function checkBridgyFedProfileExists(bskyHandle) {
+    // Remove leading @ if present
+    const handle = bskyHandle.replace(/^@/, '');
+    const url = `https://fed.brid.gy/bsky/${handle}`;
+    try {
+        const response = await axios.get(url, { validateStatus: () => true });
+        return response.status === 200;
+    } catch (err) {
+        return false;
+    }
+}
+
 // Write results to a styled HTML file
 async function writeResultsToHtml(outputInstance = 'mastodon.social', existingCsvPath = null) {
     // Read already-followed handles from the existing CSV, if provided
@@ -75,39 +88,78 @@ async function writeResultsToHtml(outputInstance = 'mastodon.social', existingCs
         let rows = lines.slice(1).map(line => {
             const match = line.match(/"([^"]*)","([^"]*)","([^"]*)"/);
             if (match) {
-                const [, handle, , status] = match;
-                const address = handle.replace(/^@/, ''); // e.g. monstercollie.bsky.social@bsky.brid.gy
-                const link = `https://${outputInstance}/@${address}`;
+                let [ , handle, link, status ] = match;
+                let address = handle.replace(/^@/, '');
+
+                // Handle "handle.invalid" special case
+                if (handle.toLowerCase().includes('handle.invalid')) {
+                    // Just show the handle as-is for invalid handles
+                    return {
+                        handle: handle,
+                        address: handle,
+                        link: 'N/A',
+                        status: 'Invalid handle',
+                        statusClass: 'status-purple',
+                        searchLink: ''
+                    };
+                }
+
+                address = handle.replace(/^@/, '');
+                link = `https://${outputInstance}/@${address}`;
                 return { handle, address, link, status };
             }
             return null;
         }).filter(row =>
             row &&
-            row.status &&
-            row.status.toLowerCase().startsWith('bridged') &&
+            (
+                (row.status && row.status.toLowerCase().startsWith('bridged')) ||
+                row.status === 'Invalid handle'
+            ) &&
             !alreadyFollowedHandles.has(row.address.toLowerCase()) &&
             !alreadyFollowedHandles.has(row.handle.toLowerCase())
         );
 
-        // Check if the profile exists on the instance for each row
+        // Filter out unfollowed accounts that are not actually bridging
+        let filteredRows = [];
         for (let row of rows) {
-            const exists = await checkProfileExistsOnInstance(outputInstance, row.address);
-            if (exists) {
-                row.status = `Bridged, exists on instance`;
-                row.statusClass = 'status-green';
-                row.existsOnInstance = true;
-                row.searchLink = '';
-            } else {
-                row.status = `Bridged, doesn't exist on instance`;
-                row.statusClass = 'status-orange';
-                row.existsOnInstance = false;
-                const encoded = encodeURIComponent(`@${row.address}`);
-                row.searchLink = `https://${outputInstance}/search?q=${encoded}`;
+            if (row.status === 'Invalid handle') {
+                filteredRows.push(row);
+                continue;
             }
-        }
+            // Only check for not-yet-followed accounts (not already followed, not invalid)
+            if (row.status && row.status.toLowerCase().startsWith('bridged')) {
+                // Check if the profile exists on the instance (skip invalid handles)
+                const exists = await checkProfileExistsOnInstance(outputInstance, row.address);
+                if (exists) {
+                    row.status = `Bridged, exists on instance`;
+                    row.statusClass = 'status-green';
+                    row.existsOnInstance = true;
+                    row.searchLink = '';
+                } else {
+                    row.status = `Bridged, doesn't exist on instance`;
+                    row.statusClass = 'status-orange';
+                    row.existsOnInstance = false;
+                    const encoded = encodeURIComponent(`@${row.address}`);
+                    row.searchLink = `https://${outputInstance}/search?q=${encoded}`;
+                }
 
-        // Sort: accounts that exist on the instance first
+                // If not already followed and not invalid, check if actually bridging
+                if (!row.existsOnInstance && row.statusClass !== 'status-purple') {
+                    const isBridging = await checkBridgyFedProfileExists(row.handle);
+                    if (!isBridging) {
+                        // Skip this row, do not include in HTML
+                        continue;
+                    }
+                }
+            }
+            filteredRows.push(row);
+        }
+        rows = filteredRows;
+
+        // Sort: accounts that exist on the instance first, then invalid handles at the end
         rows.sort((a, b) => {
+            if (a.status === 'Invalid handle' && b.status !== 'Invalid handle') return 1;
+            if (b.status === 'Invalid handle' && a.status !== 'Invalid handle') return -1;
             if (a.existsOnInstance === b.existsOnInstance) return 0;
             return a.existsOnInstance ? -1 : 1;
         });
@@ -134,6 +186,7 @@ async function writeResultsToHtml(outputInstance = 'mastodon.social', existingCs
     .status-green { color: #228B22; font-weight: bold; }
     .status-orange { color: #FF8C00; font-weight: bold; }
     .status-red { color: #C00; font-weight: bold; }
+    .status-purple { color: #800080; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -149,7 +202,7 @@ async function writeResultsToHtml(outputInstance = 'mastodon.social', existingCs
     ${allRows.map(row => `
       <tr>
         <td>${row.handle}</td>
-        <td><a href="${row.link}" target="_blank">${row.link}</a></td>
+        <td>${row.link === 'N/A' ? 'N/A' : `<a href="${row.link}" target="_blank">${row.link}</a>`}</td>
         <td class="${row.statusClass || ''}">${row.status}</td>
         <td>${row.searchLink ? `<a href="${row.searchLink}" target="_blank">Search link</a>` : ''}</td>
       </tr>
