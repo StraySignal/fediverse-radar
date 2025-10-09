@@ -91,17 +91,10 @@ async function writeResultsToHtml(outputInstance = 'mastodon.social', existingCs
                 let [ , handle, link, status ] = match;
                 let address = handle.replace(/^@/, '');
 
-                // Handle "handle.invalid" special case
+                // REMOVE: special handling for invalid handles
+                // If the handle is invalid, just skip it by returning null
                 if (handle.toLowerCase().includes('handle.invalid')) {
-                    // Just show the handle as-is for invalid handles
-                    return {
-                        handle: handle,
-                        address: handle,
-                        link: 'N/A',
-                        status: 'Invalid handle',
-                        statusClass: 'status-purple',
-                        searchLink: ''
-                    };
+                    return null;
                 }
 
                 address = handle.replace(/^@/, '');
@@ -111,10 +104,7 @@ async function writeResultsToHtml(outputInstance = 'mastodon.social', existingCs
             return null;
         }).filter(row =>
             row &&
-            (
-                (row.status && row.status.toLowerCase().startsWith('bridged')) ||
-                row.status === 'Invalid handle'
-            ) &&
+            (row.status && row.status.toLowerCase().startsWith('bridged')) &&
             !alreadyFollowedHandles.has(row.address.toLowerCase()) &&
             !alreadyFollowedHandles.has(row.handle.toLowerCase())
         );
