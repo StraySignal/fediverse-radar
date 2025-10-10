@@ -8,3 +8,5 @@ output.html
 !bskytomasto.config
 !mastotobsky.config
 UnbridgedAccounts.csv
+BridgyFollowers.txt
+.vscode/
