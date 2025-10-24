@@ -7,7 +7,7 @@ const _open = require('open');
 const chalk = require('chalk').default;
 const open = _open.default || _open;
 
-const csvFilePath = 'AccountHandles.csv'; // <-- Add this line
+const csvFilePath = 'AccountHandles.csv';
 
 // Append a single record to the CSV file (add a status column)
 function appendToCSV(handle, link, status = '') {
@@ -386,6 +386,23 @@ async function fetchBridgeFollowingHandles(bridgeHandle = 'ap.brid.gy') {
     return new Set(handles.map(h => h.toLowerCase()));
 }
 
+// Extract handles from a FollowFinder-style text dump (followFinderOutput.txt)
+// Returns an array of normalized handles (no leading '@', lowercased)
+function getHandlesFromFollowFinder(filePath = 'followFinderOutput.txt') {
+    if (!fs.existsSync(filePath)) return [];
+    const content = fs.readFileSync(filePath, 'utf8');
+    // Match tokens that start with @ and continue until whitespace (captures @user, @user.instance, @user@domain)
+    const matches = content.match(/@[^@\s]+(?:@[^@\s]+)?/g) || [];
+    const set = new Set();
+    for (let token of matches) {
+        // remove leading @ and any trailing punctuation
+        let handle = token.replace(/^@/, '').replace(/[.,;:()\[\]'"<>]+$/g, '').toLowerCase();
+        // skip obviously invalid short tokens
+        if (handle.length > 1) set.add(handle);
+    }
+    return Array.from(set);
+}
+
 async function main(args = process.argv.slice(2)) {
     // Parse args, fetch follows, check bridge, write CSV/HTML, etc.
     const handleOrDid = args[0];
@@ -418,9 +435,23 @@ async function main(args = process.argv.slice(2)) {
 
     // Fetch follows using your API helper
     process.stdout.write(chalk.cyan('Fetching your follows...'));
-    const handles = await fetchUserFollowsHandles(handleOrDid);
-    // Overwrite the previous line with the green completed status
+    let handles = await fetchUserFollowsHandles(handleOrDid); // changed to let above
     process.stdout.write(`\r${chalk.green('Fetching your follows... Done!')}\n`);
+
+    // If a followFinderOutput.txt is present, parse and merge its handles in addition to the API results
+    const followFinderPath = path.resolve('followFinderOutput.txt');
+    if (fs.existsSync(followFinderPath)) {
+        const fileHandles = getHandlesFromFollowFinder(followFinderPath);
+        if (fileHandles.length) {
+            // merge unique (lowercased)
+            const merged = new Set(handles.map(h => h.toLowerCase()));
+            for (const h of fileHandles) merged.add(h.toLowerCase());
+            handles = Array.from(merged);
+            console.log(chalk.cyan(`Included ${fileHandles.length} handles from followFinderOutput.txt — total to check: ${handles.length}`));
+        } else {
+            console.log(chalk.gray('No handles found in followFinderOutput.txt.'));
+        }
+    }
 
     initializeCSV();
     const bridgeFollowingSet = await fetchBridgeFollowingHandles('ap.brid.gy');
