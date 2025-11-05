@@ -386,6 +386,52 @@ async function fetchBridgeFollowingHandles(bridgeHandle = 'ap.brid.gy') {
     return new Set(handles.map(h => h.toLowerCase()));
 }
 
+// Fetch followers of the bridge account and return a Set of lowercased handles,
+// printing a single updating line with the count.
+async function fetchBridgeFollowersSet(bridgeHandle = 'ap.brid.gy') {
+    let cursor = undefined;
+    let handles = [];
+    let totalFetched = 0;
+
+    const printCount = (n, color = chalk.cyan) => {
+        const msg = `Bridge followers gathered: ${n}`;
+        process.stdout.write(`\r${color(msg)}`);
+    };
+
+    printCount(0, chalk.cyan);
+
+    while (true) {
+        const url = `https://public.api.bsky.app/xrpc/app.bsky.graph.getFollowers?actor=${encodeURIComponent(bridgeHandle)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}&limit=100`;
+        try {
+            const response = await axios.get(url);
+            if (response.data && Array.isArray(response.data.followers)) {
+                for (const follower of response.data.followers) {
+                    if (follower.handle) {
+                        handles.push(follower.handle);
+                        totalFetched++;
+                    }
+                }
+                printCount(totalFetched, chalk.cyan);
+                if (response.data.cursor) {
+                    cursor = response.data.cursor;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        } catch (err) {
+            // leave the partial count on screen
+            console.error(`\n${chalk.red(`Error fetching followers for ${bridgeHandle}: ${err.message}`)}`);
+            break;
+        }
+    }
+
+    printCount(totalFetched, chalk.green);
+    process.stdout.write('\n');
+    return new Set(handles.map(h => h.toLowerCase()));
+}
+
 // Extract handles from a FollowFinder-style text dump (followFinderOutput.txt)
 // Returns an array of normalized handles (no leading '@', lowercased)
 function getHandlesFromFollowFinder(filePath = 'followFinderOutput.txt') {
@@ -454,7 +500,9 @@ async function main(args = process.argv.slice(2)) {
     }
 
     initializeCSV();
-    const bridgeFollowingSet = await fetchBridgeFollowingHandles('ap.brid.gy');
+
+    // Use bridge followers instead of follows, and show a single updating count line
+    const bridgeFollowersSet = await fetchBridgeFollowersSet('ap.brid.gy');
 
     // Loading bar for checking handles
     const total = handles.length;
@@ -463,7 +511,7 @@ async function main(args = process.argv.slice(2)) {
         const handle = handles[i];
         const fullHandle = `@${handle}@bsky.brid.gy`;
         const link = `https://${outputInstance}/@${handle}@bsky.brid.gy`;
-        const isBridged = bridgeFollowingSet.has(handle.toLowerCase());
+        const isBridged = bridgeFollowersSet.has(handle.toLowerCase());
         const status = isBridged ? 'Bridged (via ap.brid.gy)' : 'Not bridged';
 
         appendToCSV(fullHandle, link, status);
